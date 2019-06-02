@@ -1,0 +1,8 @@
+﻿  Shader.cpp
+  main.cpp
+  Generating code
+  128 of 1376 functions ( 9.3%) were compiled, the rest were copied from previous compilation.
+    111 functions were new in current compilation
+    75 functions had inline decision re-evaluated but remain unchanged
+  Finished generating code
+  SSSSS.vcxproj -> E:\Projects\Visual_Studio_Projects\SSSSS\x64\Release\SSSSS.exe
