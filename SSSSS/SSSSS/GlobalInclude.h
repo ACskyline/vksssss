@@ -9,27 +9,12 @@
 
 #include <string>
 #include <iostream>
+#include <vector>
 #include <array>
 
 #include <vulkan/vulkan.h>
 
 enum class UNIFORM_SLOT { SCENE, FRAME, PASS, OBJECT, COUNT };
-
-struct UNIFORM_SLOT_DATA
-{
-	uint32_t uboBindingOffset;
-	uint32_t uboBindingCount;
-	uint32_t textureBindingOffset;
-	uint32_t textureBindingCount;
-};
-
-const UNIFORM_SLOT_DATA UniformSlotData[static_cast<uint32_t>(UNIFORM_SLOT::COUNT)] =
-{
-	{0, 1, 1, 0},//scene
-	{0, 1, 1, 0},//frame
-	{0, 1, 1, 1},//pass
-	{0, 1, 1, 0} //object
-};
 
 //stored in scene
 struct SceneUniformBufferObject {

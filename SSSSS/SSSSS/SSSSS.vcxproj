@@ -126,6 +126,8 @@
   </ItemDefinitionGroup>
   <ItemGroup>
     <ClCompile Include="Camera.cpp" />
+    <ClCompile Include="Frame.cpp" />
+    <ClCompile Include="Level.cpp" />
     <ClCompile Include="Pass.cpp" />
     <ClCompile Include="main.cpp" />
     <ClCompile Include="Mesh.cpp" />
@@ -142,6 +144,8 @@
   </ItemGroup>
   <ItemGroup>
     <ClInclude Include="Camera.h" />
+    <ClInclude Include="Frame.h" />
+    <ClInclude Include="Level.h" />
     <ClInclude Include="Pass.h" />
     <ClInclude Include="GlobalInclude.h" />
     <ClInclude Include="Mesh.h" />

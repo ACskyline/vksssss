@@ -1,5 +1,6 @@
 #pragma once
-#include "Renderer.h"
+
+#include "GlobalInclude.h"
 
 class Renderer;
 
@@ -48,7 +49,7 @@ class RenderTexture : public Texture
 {
 public:
 	RenderTexture(const std::string& _name, int _width, int _height, uint32_t _mipLevel, VkFormat _colorFormat, bool _supportDepth);
-	~RenderTexture();
+	virtual ~RenderTexture();
 
 	void virtual InitTexture(Renderer* _pRenderer);
 

@@ -10,7 +10,7 @@ Camera::~Camera()
 	CleanUp();
 }
 
-void Camera::InitCamera(Renderer* _pRenderer)
+void Camera::InitCamera()
 {
 	//do nothing
 }

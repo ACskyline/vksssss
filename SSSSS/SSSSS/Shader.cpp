@@ -1,7 +1,9 @@
 #include "Shader.h"
 #include "ShaderIncluder.h"
 
-Shader::Shader() : Shader(Undefined, "no_file")
+#include "Renderer.h"
+
+Shader::Shader() : Shader(ShaderType::Count, "no_file")
 {
 }
 
@@ -35,14 +37,14 @@ void Shader::InitShader(Renderer* _pRenderer)
 
 		shaderStageInfo.stage = VK_SHADER_STAGE_VERTEX_BIT;
 	}
-	else if (type == ShaderType::TessControlShader)
+	else if (type == ShaderType::TessellationControlShader)
 	{
 		if(!CreateShaderFromFile(shaderc_tess_control_shader, false))
 			throw std::runtime_error("shader " + fileName + " : create shader failed!");
 
 		shaderStageInfo.stage = VK_SHADER_STAGE_TESSELLATION_CONTROL_BIT;
 	}
-	else if (type == ShaderType::TessEvaluationShader)
+	else if (type == ShaderType::TessellationEvaluationShader)
 	{
 		if(!CreateShaderFromFile(shaderc_tess_evaluation_shader, false))
 			throw std::runtime_error("shader " + fileName + " : create shader failed!");
@@ -62,13 +64,6 @@ void Shader::InitShader(Renderer* _pRenderer)
 			throw std::runtime_error("shader " + fileName + " : create shader failed!");
 
 		shaderStageInfo.stage = VK_SHADER_STAGE_FRAGMENT_BIT;
-	}
-	else if (type == ShaderType::ComputeShader)
-	{
-		if(!CreateShaderFromFile(shaderc_compute_shader, false))
-			throw std::runtime_error("shader " + fileName + " : create shader failed!");
-
-		shaderStageInfo.stage = VK_SHADER_STAGE_COMPUTE_BIT;
 	}
 
 	CreateShaderModule(pRenderer->GetDevice());
@@ -90,9 +85,14 @@ void Shader::CreateShaderModule(const VkDevice& device)
 	}
 }
 
-const VkPipelineShaderStageCreateInfo& Shader::GetShaderStageInfo() const
+VkPipelineShaderStageCreateInfo Shader::GetShaderStageInfo() const
 {
 	return shaderStageInfo;
+}
+
+Shader::ShaderType Shader::GetShaderType() const
+{
+	return type;
 }
 
 const std::string Shader::GetFileName() const

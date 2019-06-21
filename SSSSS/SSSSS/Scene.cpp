@@ -1,8 +1,13 @@
 #include "Scene.h"
 
+#include "Renderer.h"
+#include "Texture.h"
+#include "Pass.h"
+
 Scene::Scene(const std::string& _name) : 
 	pRenderer(nullptr), name(_name)
 {
+	sUBO.time = 0;
 }
 
 Scene::~Scene()
@@ -10,7 +15,7 @@ Scene::~Scene()
 	CleanUp();
 }
 
-void Scene::InitScene(Renderer* _pRenderer, VkDescriptorPool descriptorPool, const std::vector<VkDescriptorSetLayout>& descriptorSetLayouts)
+void Scene::InitScene(Renderer* _pRenderer, VkDescriptorPool descriptorPool)
 {
 	if (_pRenderer == nullptr)
 	{
@@ -18,75 +23,43 @@ void Scene::InitScene(Renderer* _pRenderer, VkDescriptorPool descriptorPool, con
 	}
 	pRenderer = _pRenderer;
 
-	//must init texture before init pass
-	for (auto pCamera : pCameraVec)
-	{
-		pCamera->InitCamera(pRenderer);
-	}
-
-	for (auto pShader : pShaderVec)
-	{
-		pShader->InitShader(pRenderer);
-	}
-
-	for (auto pTexture : pTextureVec)
-	{
-		pTexture->InitTexture(pRenderer);
-	}
-
-	for (auto pMesh : pMeshVec)
-	{
-		pMesh->InitMesh(pRenderer, descriptorPool, descriptorSetLayouts[static_cast<uint32_t>(UNIFORM_SLOT::OBJECT)]);
-	}
-
-	for (auto pPass : pPassVec)
-	{
-		pPass->InitPass(pRenderer, descriptorPool, descriptorSetLayouts[static_cast<uint32_t>(UNIFORM_SLOT::PASS)]);
-	}
-
+	//create uniform resources
 	CreateSceneUniformBuffer();
+	pRenderer->CreateDescriptorSetLayout(
+		sceneDescriptorSetLayout,
+		sUboCount,//only 1 sUBO
+		0,
+		static_cast<uint32_t>(pTextureVec.size()),
+		sUboCount);//only 1 sUBO, so offset is 1
 	pRenderer->CreateDescriptorSet(
-		sceneDescriptorSet, 
-		descriptorPool, 
-		descriptorSetLayouts[static_cast<uint32_t>(UNIFORM_SLOT::SCENE)]);
+		sceneDescriptorSet,
+		descriptorPool,
+		sceneDescriptorSetLayout);
 	
 	//bind ubo
-	pRenderer->BindUniformBufferToDescriptorSets(sceneUniformBuffer, sizeof(sUBO), { sceneDescriptorSet }, UniformSlotData[static_cast<uint32_t>(UNIFORM_SLOT::SCENE)].uboBindingOffset + 0);
+	pRenderer->BindUniformBufferToDescriptorSets(sceneUniformBuffer, sizeof(sUBO), { sceneDescriptorSet }, 0);//only 1 sUBO
+
+	//bind texture
+	for (int i = 0; i < pTextureVec.size(); i++)
+	{
+		pRenderer->BindTextureToDescriptorSets(pTextureVec[i]->GetTextureImageView(), pTextureVec[i]->GetSampler(), { sceneDescriptorSet }, sUboCount + i);//only 1 sUBO, so offset is 1
+	}
 }
 
 void Scene::CleanUp()
 {
-	for (auto pShader : pShaderVec)
-	{
-		pShader->CleanUp();
-	}
-
-	for (auto pMesh : pMeshVec)
-	{
-		pMesh->CleanUp();
-	}
-
-	for (auto pTexture : pTextureVec)
-	{
-		pTexture->CleanUp();
-	}
-
-	for (auto pCamera : pCameraVec)
-	{
-		pCamera->CleanUp();
-	}
-
-	for (auto pPass : pPassVec)
-	{
-		pPass->CleanUp();
-	}
-
 	if (pRenderer != nullptr)
 	{
+		vkDestroyDescriptorSetLayout(pRenderer->GetDevice(), sceneDescriptorSetLayout, nullptr);
 		vkDestroyBuffer(pRenderer->GetDevice(), sceneUniformBuffer, nullptr);
 		vkFreeMemory(pRenderer->GetDevice(), sceneUniformBufferMemory, nullptr);
 		pRenderer = nullptr;
 	}
+}
+
+uint32_t Scene::GetUboCount() const
+{
+	return sUboCount;
 }
 
 const std::vector<Pass*>& Scene::GetPassVec() const
@@ -94,14 +67,9 @@ const std::vector<Pass*>& Scene::GetPassVec() const
 	return pPassVec;
 }
 
-const std::vector<Mesh*>& Scene::GetMeshVec() const
+uint32_t Scene::GetTextureCount() const
 {
-	return pMeshVec;
-}
-
-const std::vector<Texture*>& Scene::GetTextureVec() const
-{
-	return pTextureVec;
+	return static_cast<uint32_t>(pTextureVec.size());
 }
 
 VkBuffer Scene::GetSceneUniformBuffer() const
@@ -119,34 +87,20 @@ VkDescriptorSet* Scene::GetSceneDescriptorSetPtr()
 	return &sceneDescriptorSet;
 }
 
-void Scene::AddShader(Shader* pShader)
+VkDescriptorSetLayout Scene::GetSceneDescriptorSetLayout() const
 {
-	if(pShader!=nullptr)
-		pShaderVec.push_back(pShader);
-}
-
-void Scene::AddMesh(Mesh* pMesh)
-{
-	if (pMesh != nullptr)
-		pMeshVec.push_back(pMesh);
-}
-
-void Scene::AddCamera(Camera* pCamera)
-{
-	if (pCamera != nullptr)
-		pCameraVec.push_back(pCamera);
+	return sceneDescriptorSetLayout;
 }
 
 void Scene::AddTexture(Texture* pTexture)
 {
-	if (pTexture != nullptr)
-		pTextureVec.push_back(pTexture);
+	pTextureVec.push_back(pTexture);
 }
 
 void Scene::AddPass(Pass* pPass)
 {
-	if (pPass != nullptr)
-		pPassVec.push_back(pPass);
+	pPassVec.push_back(pPass);
+	pPass->SetScene(this);
 }
 
 void Scene::UpdateSceneUniformBuffer()

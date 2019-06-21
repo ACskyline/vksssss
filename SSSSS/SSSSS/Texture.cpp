@@ -1,5 +1,7 @@
 #include "Texture.h"
 
+#include "Renderer.h"
+
 #define STB_IMAGE_IMPLEMENTATION
 #include <stb_image.h>
 
@@ -88,19 +90,19 @@ void Texture::CreateTextureImage()
 
 	//helper functions
 	pRenderer->TransitionImageLayout(
-		pRenderer->GetGraphicsCommandPool(), 
+		pRenderer->defaultCommandPool, 
 		textureImage, 
 		textureFormat,//VK_FORMAT_R8G8B8A8_UNORM,
 		VK_IMAGE_LAYOUT_UNDEFINED, 
 		VK_IMAGE_LAYOUT_TRANSFER_DST_OPTIMAL, 
 		mipLevels);
 
-	pRenderer->CopyBufferToImage(pRenderer->GetGraphicsCommandPool(), stagingBuffer, textureImage, static_cast<uint32_t>(width), static_cast<uint32_t>(height));
+	pRenderer->CopyBufferToImage(pRenderer->defaultCommandPool, stagingBuffer, textureImage, static_cast<uint32_t>(width), static_cast<uint32_t>(height));
 	vkDestroyBuffer(pRenderer->GetDevice(), stagingBuffer, nullptr);
 	vkFreeMemory(pRenderer->GetDevice(), stagingBufferMemory, nullptr);
 
 	pRenderer->GenerateMipmaps(
-		pRenderer->GetGraphicsCommandPool(), 
+		pRenderer->defaultCommandPool,
 		textureImage, 
 		textureFormat,//VK_FORMAT_R8G8B8A8_UNORM,
 		width, 
@@ -236,7 +238,7 @@ void RenderTexture::CreateRenderTextureImage()
 		textureImage,
 		textureImageMemory);
 	colorImageView = pRenderer->CreateImageView(textureImage, textureFormat, VK_IMAGE_ASPECT_COLOR_BIT, mipLevels);
-	pRenderer->TransitionImageLayout(pRenderer->GetGraphicsCommandPool(), textureImage, textureFormat, VK_IMAGE_LAYOUT_UNDEFINED, VK_IMAGE_LAYOUT_COLOR_ATTACHMENT_OPTIMAL, 1);
+	pRenderer->TransitionImageLayout(pRenderer->defaultCommandPool, textureImage, textureFormat, VK_IMAGE_LAYOUT_UNDEFINED, VK_IMAGE_LAYOUT_COLOR_ATTACHMENT_OPTIMAL, 1);
 	
 	colorAttachment.format = textureFormat;
 	colorAttachment.samples = VK_SAMPLE_COUNT_1_BIT,//no msaa;
@@ -263,7 +265,7 @@ void RenderTexture::CreateRenderTextureImage()
 			depthImage,
 			depthImageMemory);
 		depthImageView = pRenderer->CreateImageView(depthImage, depthFormat, VK_IMAGE_ASPECT_DEPTH_BIT, 1);
-		pRenderer->TransitionImageLayout(pRenderer->GetGraphicsCommandPool(), depthImage, depthFormat, VK_IMAGE_LAYOUT_UNDEFINED, VK_IMAGE_LAYOUT_DEPTH_STENCIL_ATTACHMENT_OPTIMAL, 1);
+		pRenderer->TransitionImageLayout(pRenderer->defaultCommandPool, depthImage, depthFormat, VK_IMAGE_LAYOUT_UNDEFINED, VK_IMAGE_LAYOUT_DEPTH_STENCIL_ATTACHMENT_OPTIMAL, 1);
 
 		depthAttachment.format = depthFormat;
 		depthAttachment.samples = VK_SAMPLE_COUNT_1_BIT,//no msaa;

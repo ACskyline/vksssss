@@ -6,12 +6,10 @@
 #include <vector>
 #include <optional>
 
-#include "Scene.h"
-#include "GlobalInclude.h"
-
-class Scene;
-class Shader;
+class Level;
 class Pass;
+class Frame;
+class Shader;
 
 class Renderer
 {
@@ -19,12 +17,9 @@ public:
 	Renderer(int _width, int _hight, int _framesInFlight);
 	~Renderer();
 
-	void AddScene(Scene* pScene);
-	void InitWindow();
+	void AddLevel(Level* pLevel);
 	void InitVulkan();
-	void InitDescriptorPool(VkDescriptorPool& descriptorPool);
-	void InitAssets(VkDescriptorPool descriptorPool, const std::vector<VkDescriptorSetLayout>& descriptorSetLayouts);
-	void MainLoop();
+	void InitAssets();
 
 	// ~ get general vulkan resources ~
 
@@ -97,7 +92,25 @@ public:
 
 	VkFormat FindDepthFormat();
 
+	// ~ clean up ~
+
+	void IdleWait();
+	void CleanUp();
+
 	// ~ general pipeline functions ~
+
+	//#This is an error-tolerant function, all mesh will have the same amount of texture slot, but some may use less.
+	//#You won't have any debug layer error with this, but the texture with higher slot number will remain the same for those who use less slots.
+	VkDescriptorSetLayout GetLargestFrameDescriptorSetLayout() const;
+
+	//#This is a conservative function, all mesh will have the same number of texture slot, but textures with higher slot number will be omitted.
+	//#You will have a debug layer error when you want to bind more textures than the descriptor set layout allows.
+	VkDescriptorSetLayout GetSmallestFrameDescriptorSetLayout() const;
+
+	//return imageIndex if it can be accquired
+	uint32_t BeginCommandBuffer(const std::vector<VkCommandBuffer>& commandBuffers);
+
+	void EndCommandBuffer(const std::vector<VkCommandBuffer>& commandBuffers, uint32_t imageIndex);
 
 	void CreateDescriptorSetLayout(
 		VkDescriptorSetLayout& descriptorSetLayout, 
@@ -124,7 +137,7 @@ public:
 		VkRenderPass renderPass, 
 		uint32_t width, 
 		uint32_t height);
-
+	
 	void CreateRenderPass(
 		VkRenderPass& renderPass, 
 		const std::vector< VkAttachmentDescription>& colorAttachments, 
@@ -141,11 +154,11 @@ public:
 		Shader* pGeomShader,
 		Shader* pFragShader);
 
-	void RecordCommand(
-		Pass& pass,
-		VkCommandBuffer commandBuffer,
-		VkPipeline pipeline,
-		VkPipelineLayout pipelineLayout);
+	void CreatePipeline(
+		VkPipeline& pipeline,
+		VkPipelineLayout& pipelineLayout,
+		VkDescriptorSetLayout frameDescriptorSetLayout,
+		const Pass& pass);
 
 	void RecordCommandOverride(
 		Pass& pass,
@@ -156,37 +169,35 @@ public:
 		VkFramebuffer frameBuffer,
 		VkExtent2D extent);
 
-	// ~ graphics pipeline functions ~
+	// ~ window ~
 
-	VkPipeline& GetGraphicsPipelineRef();
-	VkRenderPass GetGraphicsRenderPass() const;
-	VkPipelineLayout& GetGraphicsPipelineLayoutRef();
-	VkDescriptorSetLayout& GetGraphicsDescriptorSetLayoutRef(int slot);
-	VkDescriptorSetLayout GetGraphicsDescriptorSetLayout(int slot) const;
-	std::vector<VkDescriptorSetLayout>& GetGraphicsDescriptorSetLayoutsRef();
-	const std::vector<VkDescriptorSetLayout>& GetGraphicsDescriptorSetLayouts() const;
-	VkDescriptorPool GetGraphicsDescriptorPool() const;
-	VkDescriptorPool& GetGraphicsDescriptorPoolRef();
-	VkCommandPool GetGraphicsCommandPool();
+	GLFWwindow* window;
 
-private:
+	// ~ default pool and command buffers ~
+
+	VkDescriptorPool defaultDescriptorPool;
+	VkCommandPool defaultCommandPool;
+	std::vector<VkCommandBuffer> defaultCommandBuffers;
+
+	// ~ swap chain render pass, framebuffer and extent ~
+
+	VkRenderPass swapChainRenderPass;
+	std::vector<VkFramebuffer> swapChainFramebuffers;
+	VkExtent2D swapChainExtent;
+
+	// ~ frame uniforms ~
+
+	std::vector<Frame> frameVec;
+
 	// ~ graphics pipeline resources ~
-
-	VkPipeline graphicsPipeline;
-	VkRenderPass graphicsRenderPass;
+	
 	VkPipelineLayout graphicsPipelineLayout;
-	std::vector<VkDescriptorSetLayout> graphicsDescriptorSetLayouts;
-	VkDescriptorPool graphicsDescriptorPool;
-	VkCommandPool graphicsCommandPool;
-	std::vector<VkCommandBuffer> graphicsCommandBuffers;
+	VkPipeline graphicsPipeline;
 
 	// ~ defered pipeline resources ~
 
-	//...
+private:
 
-	// ~ scene containers ~
-
-	std::vector<Scene*> pSceneVec;
 
 	// ~ structures ~
 
@@ -223,13 +234,13 @@ private:
 
 	// ~ member variables ~
 
+	std::vector<Level*> pLevelVec;
 	int width;
 	int height;
 	int framesInFlight;
 
-	// ~ app & window ~
+	// ~ app ~
 
-	GLFWwindow* window;
 	VkInstance instance;
 	VkDebugUtilsMessengerEXT debugMessenger;
 	VkSurfaceKHR surface;
@@ -244,21 +255,12 @@ private:
 	VkQueue graphicsQueue;
 	VkQueue presentQueue;
 
-	// ~ swap chain ~
+	// ~ swap chain resources ~
 
 	VkSwapchainKHR swapChain;
-	VkExtent2D swapChainExtent;
 	VkFormat swapChainImageFormat;
 	std::vector<VkImage> swapChainImages;
 	std::vector<VkImageView> swapChainImageViews;
-	std::vector<VkFramebuffer> swapChainFramebuffers;
-
-	// ~ frame uniforms ~
-
-	std::vector<VkBuffer> frameUniformBuffers;
-	std::vector<VkDeviceMemory> frameUniformBufferMemorys;
-	std::vector<FrameUniformBufferObject> frameUniformBufferObjects;
-	std::vector<VkDescriptorSet> frameDescriptorSets;
 
 	// ~ color buffer ~
 
@@ -287,8 +289,7 @@ private:
 
 	// ~ clean up ~
 
-	void CleanUp();
-	void CleanUpScenes();
+	void CleanUpLevels();
 
 	// ~ glfw resize ~
 
@@ -323,27 +324,18 @@ private:
 	void CreateColorResources();//msaa
 	void CreateDepthResources();
 	VkSampleCountFlagBits GetMaxUsableSampleCount();
-	void BindFrameUniformBuffers();
 	void CreateFrameUniformBuffers();
-	void UpdateFrameUniformBuffer(uint32_t currentFrame);
-	void CreateFrameDescriptorSets(VkDescriptorPool descriptorPool, VkDescriptorSetLayout descriptorSetLayout);
-	void CreateCommandPool(VkCommandPool& _commandPool);
-	void CreateCommandBuffers(VkCommandPool commandPool, std::vector<VkCommandBuffer>& commandBuffers);
-	void CreateSwapChainRenderPass(VkRenderPass& renderPass);
-	void CreateSwapChainFramebuffers(VkRenderPass renderPass);
+	void CreateSwapChainRenderPass();
+	void CreateSwapChainFramebuffers();
 	VkSurfaceFormatKHR ChooseSwapSurfaceFormat(const std::vector<VkSurfaceFormatKHR>& availableFormats);
 	VkPresentModeKHR ChooseSwapPresentMode(const std::vector<VkPresentModeKHR>& availablePresentModes);
 	VkExtent2D ChooseSwapExtent(const VkSurfaceCapabilitiesKHR& capabilities);
 	SwapChainSupportDetails QuerySwapChainSupport(VkPhysicalDevice device);
 
-	// ~ general command buffer function ~
-
-	//return imageIndex if it can be accquired
-	uint32_t BeginCommandBuffer(const std::vector<VkCommandBuffer>& commandBuffers);
-	void EndCommandBuffer(const std::vector<VkCommandBuffer>& commandBuffers, uint32_t imageIndex);
-
 	// ~ utility ~
 
+	void CreateCommandPool(VkCommandPool& _commandPool);
+	void CreateCommandBuffers(VkCommandPool commandPool, std::vector<VkCommandBuffer>& commandBuffers);
 	VkCommandBuffer BeginSingleTimeCommands(VkCommandPool commandPool);
 	void EndSingleTimeCommands(VkCommandBuffer& commandBuffer, VkCommandPool commandPool);//contains idle wait
 	uint32_t FindMemoryType(uint32_t typeFilter, VkMemoryPropertyFlags properties);

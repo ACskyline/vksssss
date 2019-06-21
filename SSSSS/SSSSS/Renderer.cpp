@@ -6,7 +6,12 @@
 #include <chrono>
 #include <fstream>
 
+#include "Frame.h"
 #include "Shader.h"
+#include "Mesh.h"
+#include "Pass.h"
+#include "Scene.h"
+#include "Level.h"
 
 Renderer::Renderer(int _width, int _height, int _framesInFlight)
 	: width(_width), height(_height), framesInFlight(_framesInFlight)
@@ -21,25 +26,9 @@ Renderer::~Renderer()
 //Public Functions//
 //vvvvvvvvvvvvvvvv//
 
-void Renderer::AddScene(Scene* pRenderer)
+void Renderer::AddLevel(Level* pLevel)
 {
-	if(pRenderer != nullptr)
-		pSceneVec.push_back(pRenderer);
-}
-
-void Renderer::InitWindow() 
-{
-	glfwInit();
-
-	glfwWindowHint(GLFW_CLIENT_API, GLFW_NO_API);
-
-	//disable resizing
-	glfwWindowHint(GLFW_RESIZABLE, GLFW_FALSE);
-
-	window = glfwCreateWindow(width, height, "Vulkan", nullptr, nullptr);
-	//handle resize explicitly        
-	glfwSetWindowUserPointer(window, this);
-	//glfwSetFramebufferSizeCallback(window, FramebufferResizeCallback);
+	pLevelVec.push_back(pLevel);
 }
 
 void Renderer::InitVulkan() 
@@ -53,94 +42,75 @@ void Renderer::InitVulkan()
 	CreateSwapChain();
 	//this is the image views for frame buffer
 	CreateImageViews();
-	CreateCommandPool(graphicsCommandPool);
+	CreateCommandPool(defaultCommandPool);
 	CreateColorResources();//msaa
 	CreateDepthResources();//comes before creating frame buffers
-	CreateSwapChainRenderPass(graphicsRenderPass);
-	CreateSwapChainFramebuffers(graphicsRenderPass);
+	CreateSwapChainRenderPass();
+	CreateSwapChainFramebuffers();
 	CreateFrameUniformBuffers();
-	CreateCommandBuffers(graphicsCommandPool, graphicsCommandBuffers);
+	CreateCommandBuffers(defaultCommandPool, defaultCommandBuffers);
 	CreateSyncObjects();
 }
 
-void Renderer::InitDescriptorPool(VkDescriptorPool& descriptorPool)
+void Renderer::InitAssets()
 {
-	uint32_t passTotalCount = 0;
-	uint32_t meshTotalCount = 0;
-	uint32_t textureTotalCount = 0;
-	uint32_t sceneTotalCount = static_cast<uint32_t>(pSceneVec.size());
-	uint32_t frameTotalCount = static_cast<uint32_t>(swapChainImages.size());
+	uint32_t sUboCount = 0;
+	uint32_t pUboCount = 0;
+	uint32_t oUboCount = 0;
+	uint32_t fUboCount = 0;
+	uint32_t sceneCount = 0;
+	uint32_t passCount = 0;
+	uint32_t objectCount = 0;
+	uint32_t frameCount = 0;
+	uint32_t textureCount = 0;
 
-	for (auto scene : pSceneVec)
+	for (auto level : pLevelVec)
 	{
-		passTotalCount += static_cast<uint32_t>(scene->GetPassVec().size());
-		meshTotalCount += static_cast<uint32_t>(scene->GetMeshVec().size());
-		textureTotalCount += static_cast<uint32_t>(scene->GetTextureVec().size());
+		sceneCount += static_cast<uint32_t>(level->GetSceneVec().size());
+		for (auto scene : level->GetSceneVec())
+		{
+			sUboCount += scene->GetUboCount();
+		}
+
+		passCount += static_cast<uint32_t>(level->GetPassVec().size());
+		for (auto pass : level->GetPassVec())
+		{
+			pUboCount += pass->GetUboCount();
+		}
+
+		objectCount += static_cast<uint32_t>(level->GetMeshVec().size());
+		for (auto mesh : level->GetMeshVec())
+		{
+			oUboCount += mesh->GetUboCount();
+		}
+
+		textureCount += static_cast<uint32_t>(level->GetTextureVec().size());
 	}
 
-	uint32_t uboCount =
-		frameTotalCount * UniformSlotData[static_cast<uint32_t>(UNIFORM_SLOT::FRAME)].uboBindingCount +
-		sceneTotalCount * UniformSlotData[static_cast<uint32_t>(UNIFORM_SLOT::SCENE)].uboBindingCount +
-		passTotalCount * UniformSlotData[static_cast<uint32_t>(UNIFORM_SLOT::PASS)].uboBindingCount +
-		meshTotalCount * UniformSlotData[static_cast<uint32_t>(UNIFORM_SLOT::OBJECT)].uboBindingCount;
-	uint32_t textureCount = textureTotalCount;
+	frameCount += static_cast<uint32_t>(frameVec.size());
+	for (auto& frame : frameVec)
+	{
+		fUboCount += frame.GetUboCount();
+	}
 
 	//create descriptor pool
 	CreateDescriptorPool(
-		descriptorPool,
-		frameTotalCount + sceneTotalCount + passTotalCount + meshTotalCount + textureTotalCount,
-		uboCount,
+		defaultDescriptorPool,
+		frameCount + sceneCount + passCount + objectCount + textureCount,
+		sUboCount + pUboCount + oUboCount + fUboCount,
 		textureCount);
-}
 
-void Renderer::InitAssets(VkDescriptorPool descriptorPool, const std::vector<VkDescriptorSetLayout>& descriptorSetLayouts)
-{
-	//create fUBO descriptor sets
-	CreateFrameDescriptorSets(
-		descriptorPool, 
-		descriptorSetLayouts[static_cast<uint32_t>(UNIFORM_SLOT::FRAME)]);
-	
-	//bind ubo
-	BindFrameUniformBuffers();
-
-	for (auto scene : pSceneVec)
+	for (auto level : pLevelVec)
 	{
 		//create descriptor sets & bind ubo and textures for other assets
-		scene->InitScene(this, descriptorPool, descriptorSetLayouts);
+		level->InitLevel(this, defaultDescriptorPool);
 	}
-}
 
-void Renderer::MainLoop() 
-{
-	while (!glfwWindowShouldClose(window)) {
-		glfwPollEvents();
-
-		uint32_t imageIndex = BeginCommandBuffer(graphicsCommandBuffers);
-		UpdateFrameUniformBuffer(imageIndex);
-		//bind frame descriptor set
-		vkCmdBindDescriptorSets(graphicsCommandBuffers[imageIndex], VK_PIPELINE_BIND_POINT_GRAPHICS, graphicsPipelineLayout, static_cast<int>(UNIFORM_SLOT::FRAME), 1, &frameDescriptorSets[imageIndex], 0, nullptr);
-
-		for (auto scene : pSceneVec)
-		{
-			//bind scene descriptor set
-			vkCmdBindDescriptorSets(graphicsCommandBuffers[imageIndex], VK_PIPELINE_BIND_POINT_GRAPHICS, graphicsPipelineLayout, static_cast<int>(UNIFORM_SLOT::SCENE), 1, scene->GetSceneDescriptorSetPtr(), 0, nullptr);
-
-			for (auto pass : scene->GetPassVec())
-			{
-				RecordCommandOverride(
-					*pass,
-					graphicsCommandBuffers[imageIndex],
-					graphicsPipeline,
-					graphicsPipelineLayout,
-					graphicsRenderPass,
-					swapChainFramebuffers[imageIndex],
-					swapChainExtent);
-			}
-		}
-		EndCommandBuffer(graphicsCommandBuffers, imageIndex);
+	//frames do not belong to levels
+	for (auto& frame : frameVec)
+	{
+		frame.InitFrame(this, defaultDescriptorPool);
 	}
-	vkDeviceWaitIdle(device);
-	CleanUp();
 }
 
 // ~ get general vulkan resources ~
@@ -495,6 +465,14 @@ void Renderer::CreateFramebuffer(VkFramebuffer& framebuffer, const std::vector<V
 }
 
 //for render textures
+void CreateRenderPass(
+	VkRenderPass& renderPass,
+	Pass& pass)
+{
+
+}
+
+//for render textures
 void Renderer::CreateRenderPass(VkRenderPass& renderPass, const std::vector<VkAttachmentDescription>& colorAttachments, const std::vector<VkAttachmentDescription>& depthAttachments)
 {
 	int attachmentSlot = 0;
@@ -519,7 +497,7 @@ void Renderer::CreateRenderPass(VkRenderPass& renderPass, const std::vector<VkAt
 	//subpass
 	VkSubpassDescription subpass = {};
 	subpass.pipelineBindPoint = VK_PIPELINE_BIND_POINT_GRAPHICS;
-	subpass.colorAttachmentCount = colorAttachmentRefs.size();
+	subpass.colorAttachmentCount = static_cast<uint32_t>(colorAttachmentRefs.size());
 	subpass.pColorAttachments = colorAttachmentRefs.data();
 	if(depthAttachments.size() > 0)
 		subpass.pDepthStencilAttachment = &depthAttachmentRef;//depth, only the first one will be used
@@ -547,6 +525,46 @@ void Renderer::CreateRenderPass(VkRenderPass& renderPass, const std::vector<VkAt
 	if (vkCreateRenderPass(device, &renderPassInfo, nullptr, &renderPass) != VK_SUCCESS) {
 		throw std::runtime_error("failed to create render pass!");
 	}
+}
+
+//This is an error-tolerant function, all mesh will have the same amount of texture slot, but some may use less.
+//You won't have any debug layer error with this, but the texture with higher slot number will remain the same for those who use less slots.
+VkDescriptorSetLayout Renderer::GetLargestFrameDescriptorSetLayout() const
+{
+	VkDescriptorSetLayout result = {};
+	int textureCountMax = -1;
+
+	for (auto& frame : frameVec)
+	{
+		int textureCount = frame.GetTextureCount();
+		if (textureCount > textureCountMax)
+		{
+			textureCountMax = textureCount;
+			result = frame.GetFrameDescriptorSetLayout();
+		}
+	}
+
+	return result;
+}
+
+//This is a conservative function, all mesh will have the same number of texture slot, but textures with higher slot number will be omitted.
+//You will have a debug layer error when you want to bind more textures than the descriptor set layout allows.
+VkDescriptorSetLayout Renderer::GetSmallestFrameDescriptorSetLayout() const
+{
+	VkDescriptorSetLayout result = {};
+	int textureCountMin = std::numeric_limits<int>::max();
+
+	for (auto& frame : frameVec)
+	{
+		int textureCount = frame.GetTextureCount();
+		if (textureCount < textureCountMin)
+		{
+			textureCountMin = textureCount;
+			result = frame.GetFrameDescriptorSetLayout();
+		}
+	}
+
+	return result;
 }
 
 void Renderer::CreateDescriptorSetLayout(VkDescriptorSetLayout& descriptorSetLayout, uint32_t uboCount, uint32_t uboBindingOffset, uint32_t texCount, uint32_t texBindingOffset)
@@ -831,51 +849,32 @@ void Renderer::CreatePipeline(
 	}
 }
 
-void Renderer::RecordCommand(
-	Pass& pass,
-	VkCommandBuffer commandBuffer,
-	VkPipeline pipeline,
-	VkPipelineLayout pipelineLayout)
+void Renderer::CreatePipeline(
+	VkPipeline& pipeline,
+	VkPipelineLayout& pipelineLayout,
+	VkDescriptorSetLayout frameDescriptorSetLayout,
+	const Pass& pass)
 {
-
-	//bind pass descriptor set
-	vkCmdBindDescriptorSets(commandBuffer, VK_PIPELINE_BIND_POINT_GRAPHICS, pipelineLayout, static_cast<int>(UNIFORM_SLOT::PASS), 1, pass.GetPassDescriptorSetPtr(), 0, nullptr);
-
-	//clear values
-	std::array<VkClearValue, 2> clearValues = {};
-	clearValues[0].color = { 0.3f, 0.6f, 1.0f, 1.0f };
-	clearValues[1].depthStencil = { 1.0f, 0 };
-
-	VkRenderPassBeginInfo renderPassInfo = {};
-	renderPassInfo.sType = VK_STRUCTURE_TYPE_RENDER_PASS_BEGIN_INFO;
-	renderPassInfo.renderPass = pass.GetRenderPass();
-	renderPassInfo.framebuffer = pass.GetFramebuffer();// swapChainFramebuffers[i];
-	renderPassInfo.renderArea.offset = { 0, 0 };
-	renderPassInfo.renderArea.extent = pass.GetExtent();// swapChainExtent;
-	renderPassInfo.clearValueCount = static_cast<uint32_t>(clearValues.size());
-	renderPassInfo.pClearValues = clearValues.data();
-
-	//render pass begin
-	vkCmdBeginRenderPass(commandBuffer, &renderPassInfo, VK_SUBPASS_CONTENTS_INLINE);
-	vkCmdBindPipeline(commandBuffer, VK_PIPELINE_BIND_POINT_GRAPHICS, pipeline);
-
-	//loop over meshes
-	for (auto mesh : pass.GetMeshVec())
+	//pipeline layout and pipeline
+	std::vector<VkDescriptorSetLayout> descriptorSetLayouts =
 	{
-		VkBuffer vertexBuffers[] = { mesh->GetVertexBuffer() };
-		VkDeviceSize offsets[] = { 0 };
-		//bind object descriptor set
-		vkCmdBindDescriptorSets(commandBuffer, VK_PIPELINE_BIND_POINT_GRAPHICS, pipelineLayout, static_cast<int>(UNIFORM_SLOT::OBJECT), 1, mesh->GetObjectDescriptorSetPtr(), 0, nullptr);
+		pass.GetScene()->GetSceneDescriptorSetLayout(),
+		frameDescriptorSetLayout,
+		pass.GetPassDescriptorSetLayout(),
+		pass.GetLargestObjectDescriptorSetLayout()
+	};
 
-		//bind vbo
-		vkCmdBindVertexBuffers(commandBuffer, 0, 1, vertexBuffers, offsets);
-		vkCmdBindIndexBuffer(commandBuffer, mesh->GetIndexBuffer(), 0, VK_INDEX_TYPE_UINT16);
-		//draw call
-		vkCmdDrawIndexed(commandBuffer, static_cast<uint32_t>(mesh->GetIndexVec().size()), 1, 0, 0, 0);
-	}
-
-	//render pass end
-	vkCmdEndRenderPass(commandBuffer);
+	CreatePipeline(
+		pipeline,
+		pipelineLayout,
+		pass.HasRenderTexture() ? pass.GetRenderPass() : swapChainRenderPass,
+		descriptorSetLayouts,
+		pass.GetShader(Shader::ShaderType::VertexShader),
+		pass.GetShader(Shader::ShaderType::TessellationControlShader),
+		pass.GetShader(Shader::ShaderType::TessellationEvaluationShader),
+		pass.GetShader(Shader::ShaderType::GeometryShader),
+		pass.GetShader(Shader::ShaderType::FragmentShader)
+	);
 }
 
 void Renderer::RecordCommandOverride(
@@ -888,6 +887,8 @@ void Renderer::RecordCommandOverride(
 	VkExtent2D extent)
 {
 
+	bool customRenderTarget = pass.HasRenderTexture();
+
 	//bind pass descriptor set
 	vkCmdBindDescriptorSets(commandBuffer, VK_PIPELINE_BIND_POINT_GRAPHICS, pipelineLayout, static_cast<int>(UNIFORM_SLOT::PASS), 1, pass.GetPassDescriptorSetPtr(), 0, nullptr);
 
@@ -898,10 +899,10 @@ void Renderer::RecordCommandOverride(
 
 	VkRenderPassBeginInfo renderPassInfo = {};
 	renderPassInfo.sType = VK_STRUCTURE_TYPE_RENDER_PASS_BEGIN_INFO;
-	renderPassInfo.renderPass = renderPass;
-	renderPassInfo.framebuffer = frameBuffer;// swapChainFramebuffers[i];
+	renderPassInfo.renderPass = customRenderTarget ? pass.GetRenderPass() : renderPass;
+	renderPassInfo.framebuffer = customRenderTarget ? pass.GetFramebuffer() : frameBuffer;
 	renderPassInfo.renderArea.offset = { 0, 0 };
-	renderPassInfo.renderArea.extent = extent;// swapChainExtent;
+	renderPassInfo.renderArea.extent = customRenderTarget ? pass.GetExtent() : extent;
 	renderPassInfo.clearValueCount = static_cast<uint32_t>(clearValues.size());
 	renderPassInfo.pClearValues = clearValues.data();
 
@@ -928,101 +929,17 @@ void Renderer::RecordCommandOverride(
 	vkCmdEndRenderPass(commandBuffer);
 }
 
-// ~ graphics pipeline functions ~
-
-VkPipeline& Renderer::GetGraphicsPipelineRef()
-{
-	return graphicsPipeline;
-}
-
-VkRenderPass Renderer::GetGraphicsRenderPass() const
-{
-	return graphicsRenderPass;
-}
-
-VkPipelineLayout& Renderer::GetGraphicsPipelineLayoutRef()
-{
-	return graphicsPipelineLayout;
-}
-
-VkDescriptorSetLayout& Renderer::GetGraphicsDescriptorSetLayoutRef(int slot)
-{
-	return graphicsDescriptorSetLayouts[slot];
-}
-
-VkDescriptorSetLayout Renderer::GetGraphicsDescriptorSetLayout(int slot) const
-{
-	return graphicsDescriptorSetLayouts[slot];
-}
-
-std::vector<VkDescriptorSetLayout>& Renderer::GetGraphicsDescriptorSetLayoutsRef()
-{
-	return graphicsDescriptorSetLayouts;
-}
-
-const std::vector<VkDescriptorSetLayout>& Renderer::GetGraphicsDescriptorSetLayouts() const
-{
-	return graphicsDescriptorSetLayouts;
-}
-
-VkDescriptorPool Renderer::GetGraphicsDescriptorPool() const
-{
-	return graphicsDescriptorPool;
-}
-
-VkDescriptorPool& Renderer::GetGraphicsDescriptorPoolRef()
-{
-	return graphicsDescriptorPool;
-}
-
-VkCommandPool Renderer::GetGraphicsCommandPool()
-{
-	return graphicsCommandPool;
-}
-
 /////////////////////
 //Private Functions//
 //vvvvvvvvvvvvvvvvv//
 
 // ~ clean up ~
 
-void Renderer::CleanUp() 
+void Renderer::CleanUpLevels()
 {
-	CleanUpScenes();
-
-	CleanUpSwapChain();
-
-	vkDestroyCommandPool(device, graphicsCommandPool, nullptr);
-
-	for (int i = 0; i < static_cast<int>(UNIFORM_SLOT::COUNT); i++)
+	for (auto level : pLevelVec)
 	{
-		vkDestroyDescriptorSetLayout(device, graphicsDescriptorSetLayouts[i], nullptr);
-	}
-
-	for (size_t i = 0; i < framesInFlight; i++) {
-		vkDestroySemaphore(device, renderFinishedSemaphores[i], nullptr);
-		vkDestroySemaphore(device, imageAvailableSemaphores[i], nullptr);
-		vkDestroyFence(device, inFlightFences[i], nullptr);
-	}
-
-	vkDestroyDevice(device, nullptr);
-
-	if (enableValidationLayers) {
-		DestroyDebugUtilsMessengerEXT(instance, debugMessenger, nullptr);
-	}
-
-	vkDestroySurfaceKHR(instance, surface, nullptr);
-	vkDestroyInstance(instance, nullptr);
-
-	glfwDestroyWindow(window);
-	glfwTerminate();
-}
-
-void Renderer::CleanUpScenes()
-{
-	for (auto scene : pSceneVec)
-	{
-		scene->CleanUp();
+		level->CleanUp();
 	}
 }
 
@@ -1373,21 +1290,18 @@ void Renderer::CleanUpSwapChain()
 	vkDestroyImage(device, colorImage, nullptr);
 	vkFreeMemory(device, colorImageMemory, nullptr);
 
-	//depth stencil
+	//depth
 	vkDestroyImageView(device, depthImageView, nullptr);
 	vkDestroyImage(device, depthImage, nullptr);
 	vkFreeMemory(device, depthImageMemory, nullptr);
 
-	for (auto framebuffer : swapChainFramebuffers) {
+	for (auto framebuffer : swapChainFramebuffers) 
+	{
 		vkDestroyFramebuffer(device, framebuffer, nullptr);
 	}
 
-	vkFreeCommandBuffers(device, graphicsCommandPool, static_cast<uint32_t>(graphicsCommandBuffers.size()), graphicsCommandBuffers.data());
-
-	vkDestroyPipeline(device, graphicsPipeline, nullptr);
-	vkDestroyRenderPass(device, graphicsRenderPass, nullptr);
-	vkDestroyPipelineLayout(device, graphicsPipelineLayout, nullptr);
-	vkDestroyDescriptorPool(device, graphicsDescriptorPool, nullptr);//descriptor pool is related to swap chain images size
+	vkFreeCommandBuffers(device, defaultCommandPool, static_cast<uint32_t>(defaultCommandBuffers.size()), defaultCommandBuffers.data());
+	vkDestroyDescriptorPool(device, defaultDescriptorPool, nullptr);//descriptor pool is related to swap chain images size
 
 	for (auto imageView : swapChainImageViews) {
 		vkDestroyImageView(device, imageView, nullptr);
@@ -1395,9 +1309,10 @@ void Renderer::CleanUpSwapChain()
 
 	vkDestroySwapchainKHR(device, swapChain, nullptr);
 
-	for (size_t i = 0; i < swapChainImages.size(); i++) {
-		vkDestroyBuffer(device, frameUniformBuffers[i], nullptr);
-		vkFreeMemory(device, frameUniformBufferMemorys[i], nullptr);
+	//frames do not belong to levels
+	for (auto& frame : frameVec) 
+	{
+		frame.CleanUp();
 	}
 }
 
@@ -1479,7 +1394,7 @@ void Renderer::CreateColorResources() {
 
 	colorImageView = CreateImageView(colorImage, colorFormat, VK_IMAGE_ASPECT_COLOR_BIT, 1);
 
-	TransitionImageLayout(graphicsCommandPool, colorImage, colorFormat, VK_IMAGE_LAYOUT_UNDEFINED, VK_IMAGE_LAYOUT_COLOR_ATTACHMENT_OPTIMAL, 1);
+	TransitionImageLayout(defaultCommandPool, colorImage, colorFormat, VK_IMAGE_LAYOUT_UNDEFINED, VK_IMAGE_LAYOUT_COLOR_ATTACHMENT_OPTIMAL, 1);
 }
 
 void Renderer::CreateDepthResources() 
@@ -1500,7 +1415,7 @@ void Renderer::CreateDepthResources()
 
 	depthImageView = CreateImageView(depthImage, depthFormat, VK_IMAGE_ASPECT_DEPTH_BIT, 1);
 
-	TransitionImageLayout(graphicsCommandPool, depthImage, depthFormat, VK_IMAGE_LAYOUT_UNDEFINED, VK_IMAGE_LAYOUT_DEPTH_STENCIL_ATTACHMENT_OPTIMAL, 1);
+	TransitionImageLayout(defaultCommandPool, depthImage, depthFormat, VK_IMAGE_LAYOUT_UNDEFINED, VK_IMAGE_LAYOUT_DEPTH_STENCIL_ATTACHMENT_OPTIMAL, 1);
 }
 
 VkFormat Renderer::FindDepthFormat() {
@@ -1509,6 +1424,38 @@ VkFormat Renderer::FindDepthFormat() {
 		VK_IMAGE_TILING_OPTIMAL,
 		VK_FORMAT_FEATURE_DEPTH_STENCIL_ATTACHMENT_BIT
 	);
+}
+
+// ~ clean up ~
+
+void Renderer::IdleWait()
+{
+	vkDeviceWaitIdle(device);
+}
+
+void Renderer::CleanUp()
+{
+	CleanUpLevels();
+
+	CleanUpSwapChain();
+
+	vkDestroyCommandPool(device, defaultCommandPool, nullptr);
+
+	for (size_t i = 0; i < framesInFlight; i++) {
+		vkDestroySemaphore(device, renderFinishedSemaphores[i], nullptr);
+		vkDestroySemaphore(device, imageAvailableSemaphores[i], nullptr);
+		vkDestroyFence(device, inFlightFences[i], nullptr);
+	}
+
+	vkDestroyDevice(device, nullptr);
+
+	if (enableValidationLayers) {
+		DestroyDebugUtilsMessengerEXT(instance, debugMessenger, nullptr);
+	}
+
+	vkDestroySurfaceKHR(instance, surface, nullptr);
+	vkDestroyInstance(instance, nullptr);
+
 }
 
 VkSampleCountFlagBits Renderer::GetMaxUsableSampleCount() 
@@ -1527,66 +1474,12 @@ VkSampleCountFlagBits Renderer::GetMaxUsableSampleCount()
 	return VK_SAMPLE_COUNT_1_BIT;
 }
 
-void Renderer::BindFrameUniformBuffers()
-{
-	for (int i = 0; i < frameUniformBuffers.size(); i++)
-	{
-		//bind ubo
-		BindUniformBufferToDescriptorSets(frameUniformBuffers[i], sizeof(frameUniformBufferObjects[i]), { frameDescriptorSets[i] }, UniformSlotData[static_cast<uint32_t>(UNIFORM_SLOT::FRAME)].uboBindingOffset + 0);
-	}
-}
-
 void Renderer::CreateFrameUniformBuffers()
 {
-	VkDeviceSize bufferSize = sizeof(FrameUniformBufferObject);
-
-	frameUniformBuffers.resize(swapChainImages.size());
-	frameUniformBufferMemorys.resize(swapChainImages.size());
-	frameUniformBufferObjects.resize(swapChainImages.size());
-
-	//init fUBO
-	for (auto& fUBO : frameUniformBufferObjects)
-	{
-		fUBO.frameNum = 0;
-	}
-
-	for (size_t i = 0; i < swapChainImages.size(); i++) {
-		CreateBuffer(bufferSize,
-			VK_BUFFER_USAGE_UNIFORM_BUFFER_BIT,
-			VK_MEMORY_PROPERTY_HOST_VISIBLE_BIT | VK_MEMORY_PROPERTY_HOST_COHERENT_BIT,
-			frameUniformBuffers[i],
-			frameUniformBufferMemorys[i]);
-
-		//initial update
-		UpdateFrameUniformBuffer(static_cast<uint32_t>(i));
-	}
-
+	frameVec.resize(swapChainImages.size());
 }
 
-void Renderer::UpdateFrameUniformBuffer(uint32_t currentImage)
-{
-	frameUniformBufferObjects[currentImage].frameNum++;
-
-	void* data;
-	vkMapMemory(device, frameUniformBufferMemorys[currentImage], 0, sizeof(frameUniformBufferObjects[currentImage]), 0, &data);
-	memcpy(data, &frameUniformBufferObjects[currentImage], sizeof(frameUniformBufferObjects[currentImage]));
-	vkUnmapMemory(device, frameUniformBufferMemorys[currentImage]);
-}
-
-void Renderer::CreateFrameDescriptorSets(VkDescriptorPool descriptorPool, VkDescriptorSetLayout descriptorSetLayout)
-{
-	frameDescriptorSets.resize(frameUniformBuffers.size());
-
-	for (auto& descriptorSet : frameDescriptorSets)
-	{
-		CreateDescriptorSet(
-			descriptorSet, 
-			descriptorPool, 
-			descriptorSetLayout);
-	}
-}
-
-void Renderer::CreateSwapChainRenderPass(VkRenderPass& renderPass)
+void Renderer::CreateSwapChainRenderPass()
 {
 	//You'll notice that we have changed the finalLayout 
 	//from VK_IMAGE_LAYOUT_PRESENT_SRC_KHR to VK_IMAGE_LAYOUT_COLOR_ATTACHMENT_OPTIMAL. 
@@ -1667,12 +1560,12 @@ void Renderer::CreateSwapChainRenderPass(VkRenderPass& renderPass)
 	renderPassInfo.dependencyCount = 1;
 	renderPassInfo.pDependencies = &dependency;
 
-	if (vkCreateRenderPass(device, &renderPassInfo, nullptr, &renderPass) != VK_SUCCESS) {
+	if (vkCreateRenderPass(device, &renderPassInfo, nullptr, &swapChainRenderPass) != VK_SUCCESS) {
 		throw std::runtime_error("failed to create render pass!");
 	}
 }
 
-void Renderer::CreateSwapChainFramebuffers(VkRenderPass renderPass) 
+void Renderer::CreateSwapChainFramebuffers() 
 {
 	swapChainFramebuffers.resize(swapChainImageViews.size());
 
@@ -1685,7 +1578,7 @@ void Renderer::CreateSwapChainFramebuffers(VkRenderPass renderPass)
 
 		VkFramebufferCreateInfo framebufferInfo = {};
 		framebufferInfo.sType = VK_STRUCTURE_TYPE_FRAMEBUFFER_CREATE_INFO;
-		framebufferInfo.renderPass = renderPass;
+		framebufferInfo.renderPass = swapChainRenderPass;
 		framebufferInfo.attachmentCount = static_cast<uint32_t>(attachments.size());
 		framebufferInfo.pAttachments = attachments.data();
 		framebufferInfo.width = swapChainExtent.width;

@@ -1,8 +1,19 @@
 #include "Pass.h"
 
+#include "Camera.h"
+#include "Texture.h"
+#include "Mesh.h"
+#include "Renderer.h"
+
 Pass::Pass(const std::string& _name) : 
-	pRenderer(nullptr), pCamera(nullptr), name(_name)
+	pRenderer(nullptr), pScene(nullptr), pCamera(nullptr), name(_name)
 {
+	for (auto& pShader : pShaderArr)
+		pShader = nullptr;
+
+	pUBO.passNum = 0;
+	pUBO.proj = glm::mat4(1);
+	pUBO.view = glm::mat4(1);
 }
 
 Pass::~Pass()
@@ -27,6 +38,31 @@ void Pass::SetCamera(Camera* _pCamera)
 	pCamera = _pCamera;
 }
 
+void Pass::SetScene(Scene* _pScene)
+{
+	pScene = _pScene;
+}
+
+void Pass::AddShader(Shader* pShader)
+{
+	pShaderArr[static_cast<int>(pShader->GetShaderType())] = pShader;
+}
+
+bool Pass::HasRenderTexture() const
+{
+	return pRenderTextureVec.size() > 0;
+}
+
+uint32_t Pass::GetUboCount() const
+{
+	return pUboCount;
+}
+
+Shader* Pass::GetShader(Shader::ShaderType type) const
+{
+	return pShaderArr[static_cast<int>(type)];
+}
+
 const std::vector<Mesh*>& Pass::GetMeshVec() const
 {
 	return pMeshVec;
@@ -40,6 +76,11 @@ const std::vector<Texture*>& Pass::GetTextureVec() const
 Camera* Pass::GetCamera() const
 {
 	return pCamera;
+}
+
+Scene* Pass::GetScene() const
+{
+	return pScene;
 }
 
 VkBuffer Pass::GetPassUniformBuffer() const
@@ -72,7 +113,50 @@ VkExtent2D Pass::GetExtent() const
 	return extent;
 }
 
-void Pass::InitPass(Renderer* _pRenderer, VkDescriptorPool descriptorPool, VkDescriptorSetLayout descriptorSetLayout)
+VkDescriptorSetLayout Pass::GetLargestObjectDescriptorSetLayout() const
+{
+	VkDescriptorSetLayout result = {};
+	int textureCountMax = -1;
+
+	for (auto pMesh : pMeshVec)
+	{
+		int textureCount = pMesh->GetTextureCount();
+		if (textureCount > textureCountMax)
+		{
+			textureCountMax = textureCount;
+			result = pMesh->GetObjectDescriptorSetLayout();
+		}
+	}
+
+	return result;
+}
+
+VkDescriptorSetLayout Pass::GetSmallestObjectDescriptorSetLayout() const
+{
+	VkDescriptorSetLayout result = {};
+	int textureCountMin = std::numeric_limits<int>::max();
+
+	for (auto pMesh : pMeshVec)
+	{
+		int textureCount = pMesh->GetTextureCount();
+		if (textureCount < textureCountMin)
+		{
+			textureCountMin = textureCount;
+			result = pMesh->GetObjectDescriptorSetLayout();
+		}
+	}
+
+	return result;
+}
+
+VkDescriptorSetLayout Pass::GetPassDescriptorSetLayout() const
+{
+	return passDescriptorSetLayout;
+}
+
+void Pass::InitPass(
+	Renderer* _pRenderer,
+	VkDescriptorPool descriptorPool)
 {
 	if (_pRenderer == nullptr)
 	{
@@ -80,45 +164,88 @@ void Pass::InitPass(Renderer* _pRenderer, VkDescriptorPool descriptorPool, VkDes
 	}
 
 	pRenderer = _pRenderer;
+	//create uniform resources
 	CreatePassUniformBuffer();
+	pRenderer->CreateDescriptorSetLayout(
+		passDescriptorSetLayout,
+		pUboCount,//only 1 pUBO
+		0,
+		static_cast<uint32_t>(pTextureVec.size()),
+		pUboCount);//only 1 pUBO, so offset is 1
 	pRenderer->CreateDescriptorSet(
-		passDescriptorSet, 
-		descriptorPool, 
-		descriptorSetLayout);
-	
+		passDescriptorSet,
+		descriptorPool,
+		passDescriptorSetLayout);
+
 	//bind ubo
-	pRenderer->BindUniformBufferToDescriptorSets(passUniformBuffer, sizeof(pUBO), { passDescriptorSet }, UniformSlotData[static_cast<uint32_t>(UNIFORM_SLOT::PASS)].uboBindingOffset + 0);
-	
+	pRenderer->BindUniformBufferToDescriptorSets(passUniformBuffer, sizeof(pUBO), { passDescriptorSet }, 0);//only 1 pUBO
+
 	//bind texture
 	for (int i = 0; i < pTextureVec.size(); i++)
 	{
-		pRenderer->BindTextureToDescriptorSets(pTextureVec[i]->GetTextureImageView(), pTextureVec[i]->GetSampler(), { passDescriptorSet }, UniformSlotData[static_cast<uint32_t>(UNIFORM_SLOT::PASS)].textureBindingOffset + i);
+		pRenderer->BindTextureToDescriptorSets(pTextureVec[i]->GetTextureImageView(), pTextureVec[i]->GetSampler(), { passDescriptorSet }, 1 + i);//only 1 pUBO, so offset is 1
 	}
 
-	//render texture, render pass and framebuffer
-	std::vector<VkAttachmentDescription> colorAttachments(pRenderTextureVec.size());
-	std::vector<VkAttachmentDescription> depthAttachments;
+	//renderPass, extent and potentially framebuffer
+	if (pRenderTextureVec.size() > 0)
+	{
+		std::vector<VkAttachmentDescription> colorAttachments(pRenderTextureVec.size());
+		std::vector<VkAttachmentDescription> depthAttachments;
+		std::vector<VkImageView> colorViews(pRenderTextureVec.size());
+		std::vector<VkImageView> depthViews;
+		int width = 0;
+		int height = 0;
+		for (int i = 0; i < pRenderTextureVec.size(); i++)
+		{
+			if (width < pRenderTextureVec[i]->GetWidth()) width = pRenderTextureVec[i]->GetWidth();
+			if (height < pRenderTextureVec[i]->GetHeight()) height = pRenderTextureVec[i]->GetHeight();
+
+			colorAttachments[i] = pRenderTextureVec[i]->GetColorAttachment();
+			colorViews[i] = pRenderTextureVec[i]->GetColorImageView();
+			if (pRenderTextureVec[i]->SupportDepth())
+			{
+				depthAttachments.push_back(pRenderTextureVec[i]->GetDepthAttachment());
+				depthViews.push_back(pRenderTextureVec[i]->GetDepthImageView());
+			}
+		}
+		extent.height = height;
+		extent.width = width;
+		pRenderer->CreateRenderPass(renderPass, colorAttachments, depthAttachments);
+		pRenderer->CreateFramebuffer(framebuffer, colorViews, depthViews, renderPass, width, height);
+	}
+	else
+	{
+		//do nothing
+		//renderPass, framebuffer and extent are all invalid
+	}
+}
+
+void Pass::RecreateFramebuffer()
+{
+	vkDestroyFramebuffer(pRenderer->GetDevice(), framebuffer, nullptr);
 	std::vector<VkImageView> colorViews(pRenderTextureVec.size());
 	std::vector<VkImageView> depthViews;
 	int width = 0;
 	int height = 0;
-	for (int i= 0; i < pRenderTextureVec.size(); i++)
+	for (int i = 0; i < pRenderTextureVec.size(); i++)
 	{
 		if (width < pRenderTextureVec[i]->GetWidth()) width = pRenderTextureVec[i]->GetWidth();
 		if (height < pRenderTextureVec[i]->GetHeight()) height = pRenderTextureVec[i]->GetHeight();
 
-		colorAttachments[i] = pRenderTextureVec[i]->GetColorAttachment();
 		colorViews[i] = pRenderTextureVec[i]->GetColorImageView();
 		if (pRenderTextureVec[i]->SupportDepth())
 		{
-			depthAttachments.push_back(pRenderTextureVec[i]->GetDepthAttachment());
 			depthViews.push_back(pRenderTextureVec[i]->GetDepthImageView());
 		}
 	}
 	extent.height = height;
 	extent.width = width;
-	pRenderer->CreateRenderPass(renderPass, colorAttachments, depthAttachments);
 	pRenderer->CreateFramebuffer(framebuffer, colorViews, depthViews, renderPass, width, height);
+}
+
+void Pass::ChangeRenderTexture(uint32_t slot, RenderTexture* pRenderTexture)
+{
+	pRenderTextureVec[slot] = pRenderTexture;
 }
 
 void Pass::UpdatePassUniformBuffer()
@@ -151,6 +278,7 @@ void Pass::CleanUp()
 {
 	if (pRenderer != nullptr)
 	{
+		vkDestroyDescriptorSetLayout(pRenderer->GetDevice(), passDescriptorSetLayout, nullptr);
 		vkDestroyFramebuffer(pRenderer->GetDevice(), framebuffer, nullptr);
 		vkDestroyRenderPass(pRenderer->GetDevice(), renderPass, nullptr);
 		vkDestroyBuffer(pRenderer->GetDevice(), passUniformBuffer, nullptr);

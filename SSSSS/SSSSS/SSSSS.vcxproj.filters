@@ -42,6 +42,12 @@
     <ClCompile Include="ShaderIncluder.cpp">
       <Filter>Source Files</Filter>
     </ClCompile>
+    <ClCompile Include="Level.cpp">
+      <Filter>Source Files</Filter>
+    </ClCompile>
+    <ClCompile Include="Frame.cpp">
+      <Filter>Source Files</Filter>
+    </ClCompile>
   </ItemGroup>
   <ItemGroup>
     <None Include="standard.vert">
@@ -80,6 +86,12 @@
       <Filter>Header Files</Filter>
     </ClInclude>
     <ClInclude Include="ShaderIncluder.h">
+      <Filter>Header Files</Filter>
+    </ClInclude>
+    <ClInclude Include="Level.h">
+      <Filter>Header Files</Filter>
+    </ClInclude>
+    <ClInclude Include="Frame.h">
       <Filter>Header Files</Filter>
     </ClInclude>
   </ItemGroup>

@@ -1,10 +1,8 @@
 #pragma once
 
-#include "Renderer.h"
-#include "GlobalInclude.h"
-#include "Dependencies/shaderc/include/shaderc.hpp"
-
 #include <fstream>
+#include "Dependencies/shaderc/include/shaderc.hpp"
+#include "GlobalInclude.h"
 
 class Renderer;
 
@@ -13,17 +11,19 @@ using namespace shaderc;
 class Shader
 {
 public:
-	enum ShaderType { VertexShader, TessControlShader, TessEvaluationShader, GeometryShader, FragmentShader, ComputeShader, Undefined };
+	enum class ShaderType { VertexShader, TessellationControlShader, TessellationEvaluationShader, GeometryShader, FragmentShader, Count };
 
 	Shader();
 	Shader(const ShaderType& _type, const std::string& _fileName);
 	~Shader();
 
-	void InitShader(Renderer* _pRenderer);
 	const std::string GetFileName() const;
-	const VkPipelineShaderStageCreateInfo& GetShaderStageInfo() const;
+	VkPipelineShaderStageCreateInfo GetShaderStageInfo() const;
+	ShaderType GetShaderType() const;
+
 	void ResetShaderBytecode();
 
+	void InitShader(Renderer* _pRenderer);
 	void CleanUp();
 
 private:
