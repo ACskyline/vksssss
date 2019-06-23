@@ -18,11 +18,14 @@ public:
 
 	void AddMesh(Mesh* pMesh);
 	void AddTexture(Texture* pTexture);
+	void AddRenderTexture(RenderTexture* pRenderTexture);
 	void SetCamera(Camera* pCamera);
-	void SetScene(Scene* _pScene);
 	void AddShader(Shader* pShader);
+	void SetScene(Scene* _pScene);
 
+	int GetRenderTextureCount() const;
 	bool HasRenderTexture() const;
+	VkSampleCountFlagBits GetMsaaSamples() const;
 	uint32_t GetUboCount() const;
 	Shader* GetShader(Shader::ShaderType type) const;
 	const std::vector<Mesh*>& GetMeshVec() const;
@@ -48,7 +51,7 @@ public:
 		Renderer* _pRenderer, 
 		VkDescriptorPool descriptorPool);
 
-	//# No need to recreate render pass because pipeline is fixed to the render pass.
+	//# Can't recreate render pass because a pipeline is fixed to the render pass.
 	//# If we want to reuse the pipeline, the render pass must remain the same.
 	//# This means if we want to dynamically change render target, we can't change the format and total number of render textures, but only which render textures we want to render to.
 	void RecreateFramebuffer();

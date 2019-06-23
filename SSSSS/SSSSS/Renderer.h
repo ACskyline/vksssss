@@ -6,6 +6,8 @@
 #include <vector>
 #include <optional>
 
+#include "GlobalInclude.h"
+
 class Level;
 class Pass;
 class Frame;
@@ -91,6 +93,8 @@ public:
 	// ~ utility ~
 
 	VkFormat FindDepthFormat();
+	VkSampleCountFlagBits FindMaxUsableSampleCount();
+	uint32_t GetGraphicsQueueFamilyIndex();
 
 	// ~ clean up ~
 
@@ -132,22 +136,26 @@ public:
 
 	void CreateFramebuffer(
 		VkFramebuffer& framebuffer, 
-		const std::vector<VkImageView>& colorViews, 
-		const std::vector<VkImageView>& depthViews, 
+		const std::vector<VkImageView>& preResolveViews, 
+		const std::vector<VkImageView>& depthViews,
+		const std::vector<VkImageView>& colorViews,
 		VkRenderPass renderPass, 
 		uint32_t width, 
 		uint32_t height);
 	
 	void CreateRenderPass(
 		VkRenderPass& renderPass, 
-		const std::vector< VkAttachmentDescription>& colorAttachments, 
-		const std::vector< VkAttachmentDescription>& depthAttachments);
+		const std::vector<VkAttachmentDescription>& preResolveAttachments, 
+		const std::vector<VkAttachmentDescription>& depthAttachments,
+		const std::vector<VkAttachmentDescription>& colorAttachments);
 
 	void CreatePipeline(
 		VkPipeline& pipeline,
 		VkPipelineLayout& pipelineLayout,
 		VkRenderPass renderPass,
 		const std::vector<VkDescriptorSetLayout>& descriptorSetLayout,
+		VkExtent2D extent,
+		VkSampleCountFlagBits msaaSamples,
 		Shader* pVertShader,
 		Shader* pTesCtrlShader,
 		Shader* pTesEvalShader,
@@ -160,14 +168,16 @@ public:
 		VkDescriptorSetLayout frameDescriptorSetLayout,
 		const Pass& pass);
 
-	void RecordCommandOverride(
+	void RecordCommand(
+		glm::vec4 colorClear,
+		glm::vec2 depthStencilClear,
 		Pass& pass,
 		VkCommandBuffer commandBuffer,
 		VkPipeline pipeline,
 		VkPipelineLayout pipelineLayout,
-		VkRenderPass renderPass,
-		VkFramebuffer frameBuffer,
-		VkExtent2D extent);
+		VkRenderPass renderPassFallback,
+		VkFramebuffer frameBufferFallback,
+		VkExtent2D extentFallback);
 
 	// ~ window ~
 
@@ -191,10 +201,13 @@ public:
 
 	// ~ graphics pipeline resources ~
 	
-	VkPipelineLayout graphicsPipelineLayout;
 	VkPipeline graphicsPipeline;
+	VkPipelineLayout graphicsPipelineLayout;
 
 	// ~ defered pipeline resources ~
+
+	VkPipeline offscreenPipeline;
+	VkPipelineLayout offscreenPipelineLayout;
 
 private:
 
@@ -252,6 +265,7 @@ private:
 
 	// ~ gpu queue ~ 
 
+	QueueFamilyIndices queueFamilyIndices;
 	VkQueue graphicsQueue;
 	VkQueue presentQueue;
 
@@ -268,7 +282,7 @@ private:
 	//By default we'll be using only one sample per pixel which is equivalent to no multisampling,
 	//in which case the final image will remain unchanged. The exact maximum number of samples can be 
 	//extracted from VkPhysicalDeviceProperties associated with our selected physical device.
-	VkSampleCountFlagBits msaaSamples;// = VK_SAMPLE_COUNT_1_BIT;
+	VkSampleCountFlagBits swapChainMsaaSamples;
 	VkImage colorImage;
 	VkDeviceMemory colorImageMemory;
 	VkImageView colorImageView;
@@ -323,7 +337,6 @@ private:
 	void CreateSyncObjects();
 	void CreateColorResources();//msaa
 	void CreateDepthResources();
-	VkSampleCountFlagBits GetMaxUsableSampleCount();
 	void CreateFrameUniformBuffers();
 	void CreateSwapChainRenderPass();
 	void CreateSwapChainFramebuffers();

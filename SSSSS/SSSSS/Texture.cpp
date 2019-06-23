@@ -123,8 +123,8 @@ void Texture::CreateTextureSampler()
 {
 	VkSamplerCreateInfo samplerInfo = {};
 	samplerInfo.sType = VK_STRUCTURE_TYPE_SAMPLER_CREATE_INFO;
-	samplerInfo.magFilter = VK_FILTER_LINEAR;
-	samplerInfo.minFilter = VK_FILTER_LINEAR;
+	samplerInfo.magFilter =	VK_FILTER_LINEAR;//VK_FILTER_NEAREST;// 
+	samplerInfo.minFilter = VK_FILTER_LINEAR;//VK_FILTER_NEAREST;// 
 	samplerInfo.addressModeU = VK_SAMPLER_ADDRESS_MODE_REPEAT;
 	samplerInfo.addressModeV = VK_SAMPLER_ADDRESS_MODE_REPEAT;
 	samplerInfo.addressModeW = VK_SAMPLER_ADDRESS_MODE_REPEAT;
@@ -160,12 +160,12 @@ void Texture::CleanUp()
 //////// Render Texture ////////
 ////////////////////////////////
 
-RenderTexture::RenderTexture(const std::string& _name, int _width, int _height, uint32_t _mipLevel, VkFormat _colorFormat, bool _supportDepth)
-	: Texture(_name, _colorFormat), supportDepth(_supportDepth)
+RenderTexture::RenderTexture(const std::string& _name, int _width, int _height, uint32_t _mipLevels, VkFormat _colorFormat, bool _supportDepth, bool _supportMsaa)
+	: Texture(_name, _colorFormat), supportDepth(_supportDepth), supportMsaa(_supportMsaa)
 {
 	width = _width;
 	height = _height;
-	mipLevels = _mipLevel;
+	mipLevels = _mipLevels;
 }
 
 RenderTexture::~RenderTexture()
@@ -190,12 +190,21 @@ void RenderTexture::CleanUp()
 {
 	if (pRenderer != nullptr)
 	{
-		vkDestroyImageView(pRenderer->GetDevice(), colorImageView, nullptr);
+		vkDestroyImage(pRenderer->GetDevice(), preResolveImage, nullptr);
+		vkFreeMemory(pRenderer->GetDevice(), preResolveImageMemory, nullptr);
+		vkDestroyImageView(pRenderer->GetDevice(), preResolveImageView, nullptr);
 		vkDestroyImage(pRenderer->GetDevice(), depthImage, nullptr);
 		vkFreeMemory(pRenderer->GetDevice(), depthImageMemory, nullptr);
 		vkDestroyImageView(pRenderer->GetDevice(), depthImageView, nullptr);
-		pRenderer = nullptr;
+		vkDestroyImageView(pRenderer->GetDevice(), colorImageView, nullptr);
+		Texture::CleanUp();
+		pRenderer = nullptr;//undecessary
 	}
+}
+
+VkSampleCountFlagBits RenderTexture::GetMsaaSamples() const
+{
+	return msaaSamples;
 }
 
 VkAttachmentDescription RenderTexture::GetColorAttachment() const
@@ -208,6 +217,11 @@ VkAttachmentDescription RenderTexture::GetDepthAttachment() const
 	return depthAttachment;
 }
 
+VkAttachmentDescription RenderTexture::GetPreResolveAttachment() const
+{
+	return preResolveAttachment;
+}
+
 VkImageView RenderTexture::GetColorImageView() const
 {
 	return colorImageView;
@@ -218,13 +232,80 @@ VkImageView RenderTexture::GetDepthImageView() const
 	return depthImageView;
 }
 
+VkImageView RenderTexture::GetPreResolveImageView() const
+{
+	return preResolveImageView;
+}
+
 bool RenderTexture::SupportDepth()
 {
 	return supportDepth;
 }
 
+bool RenderTexture::SupportMsaa()
+{
+	return supportMsaa;
+}
+
 void RenderTexture::CreateRenderTextureImage()
 {
+	//pre resolve
+	if (supportMsaa)
+	{
+		//update msaa samples
+		msaaSamples = pRenderer->FindMaxUsableSampleCount();
+		pRenderer->CreateImage(
+			static_cast<uint32_t>(width),
+			static_cast<uint32_t>(height),
+			1,//pre resolve buffer does not need mip map
+			msaaSamples,//msaa
+			textureFormat,
+			VK_IMAGE_TILING_OPTIMAL,
+			VK_IMAGE_USAGE_TRANSIENT_ATTACHMENT_BIT | VK_IMAGE_USAGE_COLOR_ATTACHMENT_BIT,
+			VK_MEMORY_PROPERTY_DEVICE_LOCAL_BIT,
+			preResolveImage,
+			preResolveImageMemory);
+		preResolveImageView = pRenderer->CreateImageView(preResolveImage, textureFormat, VK_IMAGE_ASPECT_COLOR_BIT, 1);
+		pRenderer->TransitionImageLayout(pRenderer->defaultCommandPool, preResolveImage, textureFormat, VK_IMAGE_LAYOUT_UNDEFINED, VK_IMAGE_LAYOUT_COLOR_ATTACHMENT_OPTIMAL, 1);
+
+		preResolveAttachment.format = textureFormat;
+		preResolveAttachment.samples = msaaSamples;//msaa;
+		preResolveAttachment.loadOp = VK_ATTACHMENT_LOAD_OP_CLEAR;
+		preResolveAttachment.storeOp = VK_ATTACHMENT_STORE_OP_STORE;
+		preResolveAttachment.stencilLoadOp = VK_ATTACHMENT_LOAD_OP_DONT_CARE;
+		preResolveAttachment.stencilStoreOp = VK_ATTACHMENT_STORE_OP_DONT_CARE;
+		preResolveAttachment.initialLayout = VK_IMAGE_LAYOUT_UNDEFINED;
+		preResolveAttachment.finalLayout = VK_IMAGE_LAYOUT_COLOR_ATTACHMENT_OPTIMAL;
+	}
+
+	//depth
+	if (supportDepth)
+	{
+		depthFormat = pRenderer->FindDepthFormat();
+		pRenderer->CreateImage(
+			static_cast<uint32_t>(width),
+			static_cast<uint32_t>(height),
+			1,//depth buffer does not need mip map
+			supportMsaa ? msaaSamples : VK_SAMPLE_COUNT_1_BIT,//msaa
+			depthFormat,
+			VK_IMAGE_TILING_OPTIMAL,
+			VK_IMAGE_USAGE_DEPTH_STENCIL_ATTACHMENT_BIT,
+			VK_MEMORY_PROPERTY_DEVICE_LOCAL_BIT,
+			depthImage,
+			depthImageMemory);
+		depthImageView = pRenderer->CreateImageView(depthImage, depthFormat, VK_IMAGE_ASPECT_DEPTH_BIT, 1);
+		pRenderer->TransitionImageLayout(pRenderer->defaultCommandPool, depthImage, depthFormat, VK_IMAGE_LAYOUT_UNDEFINED, VK_IMAGE_LAYOUT_DEPTH_STENCIL_ATTACHMENT_OPTIMAL, 1);
+
+		depthAttachment.format = depthFormat;
+		depthAttachment.samples = supportMsaa ? msaaSamples : VK_SAMPLE_COUNT_1_BIT,//msaa
+		depthAttachment.loadOp = VK_ATTACHMENT_LOAD_OP_CLEAR;
+		depthAttachment.storeOp = VK_ATTACHMENT_STORE_OP_DONT_CARE;
+		depthAttachment.stencilLoadOp = VK_ATTACHMENT_LOAD_OP_DONT_CARE;
+		depthAttachment.stencilStoreOp = VK_ATTACHMENT_STORE_OP_DONT_CARE;
+		depthAttachment.initialLayout = VK_IMAGE_LAYOUT_UNDEFINED;
+		depthAttachment.finalLayout = VK_IMAGE_LAYOUT_DEPTH_STENCIL_ATTACHMENT_OPTIMAL;
+	}
+
 	//color
 	pRenderer->CreateImage(
 		static_cast<uint32_t>(width),
@@ -242,38 +323,70 @@ void RenderTexture::CreateRenderTextureImage()
 	
 	colorAttachment.format = textureFormat;
 	colorAttachment.samples = VK_SAMPLE_COUNT_1_BIT,//no msaa;
-	colorAttachment.loadOp = VK_ATTACHMENT_LOAD_OP_CLEAR;
+	//if msaa is supported, this is the resolve destination which does not require clear, 
+	//beacause resolve is a full screen operation, but if msaa is not supported, 
+	//this is the final result, clear is needed.
+	colorAttachment.loadOp = supportMsaa ? VK_ATTACHMENT_LOAD_OP_DONT_CARE : VK_ATTACHMENT_LOAD_OP_CLEAR;
 	colorAttachment.storeOp = VK_ATTACHMENT_STORE_OP_STORE;
 	colorAttachment.stencilLoadOp = VK_ATTACHMENT_LOAD_OP_DONT_CARE;
 	colorAttachment.stencilStoreOp = VK_ATTACHMENT_STORE_OP_DONT_CARE;
 	colorAttachment.initialLayout = VK_IMAGE_LAYOUT_UNDEFINED;
 	colorAttachment.finalLayout = VK_IMAGE_LAYOUT_COLOR_ATTACHMENT_OPTIMAL;
+}
 
-	//depth
-	if (supportDepth)
-	{
-		depthFormat = pRenderer->FindDepthFormat();
-		pRenderer->CreateImage(
-			static_cast<uint32_t>(width),
-			static_cast<uint32_t>(height),
-			1,//depth buffer does not need mip map
-			VK_SAMPLE_COUNT_1_BIT,//no msaa
-			depthFormat,
-			VK_IMAGE_TILING_OPTIMAL,
-			VK_IMAGE_USAGE_DEPTH_STENCIL_ATTACHMENT_BIT,
-			VK_MEMORY_PROPERTY_DEVICE_LOCAL_BIT,
-			depthImage,
-			depthImageMemory);
-		depthImageView = pRenderer->CreateImageView(depthImage, depthFormat, VK_IMAGE_ASPECT_DEPTH_BIT, 1);
-		pRenderer->TransitionImageLayout(pRenderer->defaultCommandPool, depthImage, depthFormat, VK_IMAGE_LAYOUT_UNDEFINED, VK_IMAGE_LAYOUT_DEPTH_STENCIL_ATTACHMENT_OPTIMAL, 1);
+void RenderTexture::TransitionLayoutToWrite(VkCommandBuffer commandBuffer)
+{
+	VkImageMemoryBarrier barrier = {};
+	barrier.sType = VK_STRUCTURE_TYPE_IMAGE_MEMORY_BARRIER;
+	barrier.oldLayout = VK_IMAGE_LAYOUT_SHADER_READ_ONLY_OPTIMAL;
+	barrier.newLayout = VK_IMAGE_LAYOUT_COLOR_ATTACHMENT_OPTIMAL;
+	barrier.image = textureImage;
+	barrier.srcQueueFamilyIndex = pRenderer->GetGraphicsQueueFamilyIndex();
+	barrier.dstQueueFamilyIndex = pRenderer->GetGraphicsQueueFamilyIndex();
+	barrier.srcAccessMask = VK_ACCESS_SHADER_READ_BIT;
+	barrier.dstAccessMask = VK_ACCESS_COLOR_ATTACHMENT_WRITE_BIT;
+	barrier.subresourceRange.aspectMask = VK_IMAGE_ASPECT_COLOR_BIT;
+	barrier.subresourceRange.baseArrayLayer = 0;
+	barrier.subresourceRange.layerCount = 1;
+	barrier.subresourceRange.levelCount = mipLevels;
 
-		depthAttachment.format = depthFormat;
-		depthAttachment.samples = VK_SAMPLE_COUNT_1_BIT,//no msaa;
-		depthAttachment.loadOp = VK_ATTACHMENT_LOAD_OP_CLEAR;
-		depthAttachment.storeOp = VK_ATTACHMENT_STORE_OP_DONT_CARE;
-		depthAttachment.stencilLoadOp = VK_ATTACHMENT_LOAD_OP_DONT_CARE;
-		depthAttachment.stencilStoreOp = VK_ATTACHMENT_STORE_OP_DONT_CARE;
-		depthAttachment.initialLayout = VK_IMAGE_LAYOUT_UNDEFINED;
-		depthAttachment.finalLayout = VK_IMAGE_LAYOUT_DEPTH_STENCIL_ATTACHMENT_OPTIMAL;
-	}
+	VkPipelineStageFlags sceStage = VK_PIPELINE_STAGE_FRAGMENT_SHADER_BIT;
+	VkPipelineStageFlags dstStage = VK_PIPELINE_STAGE_COLOR_ATTACHMENT_OUTPUT_BIT;
+
+	vkCmdPipelineBarrier(
+		commandBuffer, 
+		sceStage, dstStage,
+		0, 
+		0, nullptr,
+		0, nullptr, 
+		1, &barrier);
+}
+
+void RenderTexture::TransitionLayoutToRead(VkCommandBuffer commandBuffer)
+{
+	VkImageMemoryBarrier barrier = {};
+	barrier.sType = VK_STRUCTURE_TYPE_IMAGE_MEMORY_BARRIER;
+	barrier.oldLayout = VK_IMAGE_LAYOUT_COLOR_ATTACHMENT_OPTIMAL;
+	barrier.newLayout = VK_IMAGE_LAYOUT_SHADER_READ_ONLY_OPTIMAL;
+	barrier.image = textureImage;
+	barrier.srcQueueFamilyIndex = pRenderer->GetGraphicsQueueFamilyIndex();
+	barrier.dstQueueFamilyIndex = pRenderer->GetGraphicsQueueFamilyIndex();
+	barrier.srcAccessMask = VK_ACCESS_COLOR_ATTACHMENT_WRITE_BIT;
+	barrier.dstAccessMask = VK_ACCESS_SHADER_READ_BIT;
+	barrier.subresourceRange.aspectMask = VK_IMAGE_ASPECT_COLOR_BIT;
+	barrier.subresourceRange.baseArrayLayer = 0;
+	barrier.subresourceRange.baseMipLevel = 0;
+	barrier.subresourceRange.layerCount = 1;
+	barrier.subresourceRange.levelCount = mipLevels;
+
+	VkPipelineStageFlags srcStage = VK_PIPELINE_STAGE_COLOR_ATTACHMENT_OUTPUT_BIT;
+	VkPipelineStageFlags dstStage = VK_PIPELINE_STAGE_FRAGMENT_SHADER_BIT;
+
+	vkCmdPipelineBarrier(
+		commandBuffer,
+		srcStage, dstStage,
+		0,
+		0, nullptr,
+		0, nullptr,
+		1, &barrier);
 }

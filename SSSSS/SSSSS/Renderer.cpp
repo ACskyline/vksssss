@@ -237,7 +237,6 @@ void Renderer::TransitionImageLayout(VkCommandPool commandPool, VkImage image, V
 		barrier.subresourceRange.aspectMask = VK_IMAGE_ASPECT_COLOR_BIT;
 	}
 
-
 	//The pipeline stages that you are allowed to specify before and after the barrier depend on how you use the resource before and after the barrier. 
 	//The allowed values are listed in this table https://www.khronos.org/registry/vulkan/specs/1.0/html/vkspec.html#synchronization-access-types-supported.
 	//For example, if you're going to read from a uniform after the barrier, you would specify a usage of VK_ACCESS_UNIFORM_READ_BIT 
@@ -246,7 +245,10 @@ void Renderer::TransitionImageLayout(VkCommandPool commandPool, VkImage image, V
 	VkPipelineStageFlags sourceStage;
 	VkPipelineStageFlags destinationStage;
 
-	if (oldLayout == VK_IMAGE_LAYOUT_UNDEFINED && newLayout == VK_IMAGE_LAYOUT_TRANSFER_DST_OPTIMAL) {
+	if (oldLayout == VK_IMAGE_LAYOUT_UNDEFINED && newLayout == VK_IMAGE_LAYOUT_TRANSFER_DST_OPTIMAL) 
+	{
+		// ~ this is for generating mip map ~
+		
 		//One thing to note is that command buffer submission results in implicit VK_ACCESS_HOST_WRITE_BIT synchronization at the beginning.
 		//Since the transitionImageLayout function executes a command buffer with only a single command, 
 		//you could use this implicit synchronization and set srcAccessMask to 0 if you ever needed a VK_ACCESS_HOST_WRITE_BIT dependency in a layout transition.
@@ -256,13 +258,19 @@ void Renderer::TransitionImageLayout(VkCommandPool commandPool, VkImage image, V
 		sourceStage = VK_PIPELINE_STAGE_TOP_OF_PIPE_BIT;
 		destinationStage = VK_PIPELINE_STAGE_TRANSFER_BIT;
 	}
-	else if (oldLayout == VK_IMAGE_LAYOUT_TRANSFER_DST_OPTIMAL && newLayout == VK_IMAGE_LAYOUT_SHADER_READ_ONLY_OPTIMAL) {
+	else if (oldLayout == VK_IMAGE_LAYOUT_TRANSFER_DST_OPTIMAL && newLayout == VK_IMAGE_LAYOUT_SHADER_READ_ONLY_OPTIMAL) 
+	{
+		// ~ this is for texture ~
+
 		barrier.srcAccessMask = VK_ACCESS_TRANSFER_WRITE_BIT;
 		barrier.dstAccessMask = VK_ACCESS_SHADER_READ_BIT;
 		sourceStage = VK_PIPELINE_STAGE_TRANSFER_BIT;
 		destinationStage = VK_PIPELINE_STAGE_FRAGMENT_SHADER_BIT;
 	}
-	else if (oldLayout == VK_IMAGE_LAYOUT_UNDEFINED && newLayout == VK_IMAGE_LAYOUT_DEPTH_STENCIL_ATTACHMENT_OPTIMAL) {
+	else if (oldLayout == VK_IMAGE_LAYOUT_UNDEFINED && newLayout == VK_IMAGE_LAYOUT_DEPTH_STENCIL_ATTACHMENT_OPTIMAL) 
+	{
+		// ~ this is for depth stencil buffer ~
+
 		//The reading happens in the VK_PIPELINE_STAGE_EARLY_FRAGMENT_TESTS_BIT stage and the writing in the VK_PIPELINE_STAGE_LATE_FRAGMENT_TESTS_BIT.
 		//You should pick the earliest pipeline stage that matches the specified operations, so that it is ready for usage as depth attachment when it needs to be.
 		barrier.srcAccessMask = 0;
@@ -270,7 +278,10 @@ void Renderer::TransitionImageLayout(VkCommandPool commandPool, VkImage image, V
 		sourceStage = VK_PIPELINE_STAGE_TOP_OF_PIPE_BIT;
 		destinationStage = VK_PIPELINE_STAGE_EARLY_FRAGMENT_TESTS_BIT;
 	}
-	else if (oldLayout == VK_IMAGE_LAYOUT_UNDEFINED && newLayout == VK_IMAGE_LAYOUT_COLOR_ATTACHMENT_OPTIMAL) {
+	else if (oldLayout == VK_IMAGE_LAYOUT_UNDEFINED && newLayout == VK_IMAGE_LAYOUT_COLOR_ATTACHMENT_OPTIMAL) 
+	{
+		// ~ this is for resolve attachment ~
+
 		barrier.srcAccessMask = 0;
 		barrier.dstAccessMask = VK_ACCESS_COLOR_ATTACHMENT_READ_BIT | VK_ACCESS_COLOR_ATTACHMENT_WRITE_BIT;
 		sourceStage = VK_PIPELINE_STAGE_TOP_OF_PIPE_BIT;
@@ -444,11 +455,27 @@ VkImageView Renderer::CreateImageView(VkImage image, VkFormat format, VkImageAsp
 // ~ create pipeline resources ~
 
 //for render textures
-void Renderer::CreateFramebuffer(VkFramebuffer& framebuffer, const std::vector<VkImageView>& colorViews, const std::vector<VkImageView>& depthViews, VkRenderPass renderPass, uint32_t width, uint32_t height)
+void Renderer::CreateFramebuffer(
+	VkFramebuffer& framebuffer,
+	const std::vector<VkImageView>& preResolveViews,
+	const std::vector<VkImageView>& depthViews,
+	const std::vector<VkImageView>& colorViews,
+	VkRenderPass renderPass,
+	uint32_t width,
+	uint32_t height)
 {
-	std::vector<VkImageView> views = colorViews;
+	//following this paticular arrangement, clear value will always be color first and then depth stencil
+	//if msaa is supported, pre resolve attachment will start from attachment 0
+	//if msaa is not supported, color attachment will start from attachment 0
+	std::vector<VkImageView> views = preResolveViews.size() > 0 ? preResolveViews : colorViews;
+
+	//depth attachment will follow pre resolve attachment
 	if (depthViews.size() > 0)
 		views.push_back(depthViews[0]);//depth, only the first one will be used
+
+	//if msaa is not supported, color attachment will follow depth attachment
+	if (preResolveViews.size() > 0)
+		views.insert(views.end(), colorViews.begin(), colorViews.end());
 
 	VkFramebufferCreateInfo framebufferInfo = {};
 	framebufferInfo.sType = VK_STRUCTURE_TYPE_FRAMEBUFFER_CREATE_INFO;
@@ -465,42 +492,78 @@ void Renderer::CreateFramebuffer(VkFramebuffer& framebuffer, const std::vector<V
 }
 
 //for render textures
-void CreateRenderPass(
+void Renderer::CreateRenderPass(
 	VkRenderPass& renderPass,
-	Pass& pass)
-{
-
-}
-
-//for render textures
-void Renderer::CreateRenderPass(VkRenderPass& renderPass, const std::vector<VkAttachmentDescription>& colorAttachments, const std::vector<VkAttachmentDescription>& depthAttachments)
+	const std::vector<VkAttachmentDescription>& preResolveAttachments,
+	const std::vector<VkAttachmentDescription>& depthAttachments,
+	const std::vector<VkAttachmentDescription>& colorAttachments)
 {
 	int attachmentSlot = 0;
 
+	//pre resolve
+	std::vector<VkAttachmentReference> preResolveAttachmentRefs;
 	//color
 	std::vector<VkAttachmentReference> colorAttachmentRefs;
 	colorAttachmentRefs.resize(colorAttachments.size());
-	for (int i = 0; i < colorAttachmentRefs.size(); i++)
-	{
-		colorAttachmentRefs[i].attachment = attachmentSlot++;
-		colorAttachmentRefs[i].layout = colorAttachments[i].finalLayout;
-	}
-	
 	//depth, only the first one will be used
 	VkAttachmentReference depthAttachmentRef = {};
-	if (depthAttachments.size() > 0)
+
+	//following this paticular arrangement, clear value will always be color first and then depth stencil
+	if (preResolveAttachments.size() > 0)
 	{
-		depthAttachmentRef.attachment = attachmentSlot++;
-		depthAttachmentRef.layout = depthAttachments[0].finalLayout;
+		preResolveAttachmentRefs.resize(preResolveAttachments.size());
+		//if msaa is supported, pre resolve attachment will start from attachment 0
+		for (int i = 0; i < preResolveAttachmentRefs.size(); i++)
+		{
+			preResolveAttachmentRefs[i].attachment = attachmentSlot++;
+			preResolveAttachmentRefs[i].layout = preResolveAttachments[i].finalLayout;
+		}
+
+		//depth attachment will follow pre resolve attachment
+		if (depthAttachments.size() > 0)
+		{
+			depthAttachmentRef.attachment = attachmentSlot++;
+			depthAttachmentRef.layout = depthAttachments[0].finalLayout;
+		}
+
+		//color attachment will follor depth attachment
+		for (int i = 0; i < colorAttachmentRefs.size(); i++)
+		{
+			colorAttachmentRefs[i].attachment = attachmentSlot++;
+			colorAttachmentRefs[i].layout = colorAttachments[i].finalLayout;
+		}
+	}
+	else
+	{
+		//if msaa is not supported, color attachment will start from attachment 0
+		for (int i = 0; i < colorAttachmentRefs.size(); i++)
+		{
+			colorAttachmentRefs[i].attachment = attachmentSlot++;
+			colorAttachmentRefs[i].layout = colorAttachments[i].finalLayout;
+		}
+
+		//depth attachment will follow color attachment
+		if (depthAttachments.size() > 0)
+		{
+			depthAttachmentRef.attachment = attachmentSlot++;
+			depthAttachmentRef.layout = depthAttachments[0].finalLayout;
+		}
+
+		//there will not be pre resolve attachment
 	}
 
+
 	//subpass
+	//The idea is when msaa is enabled, the rendering results will be resolved to color attachments,
+	//when msaa is disabled, the rendering results will be rendered to color attachments.
 	VkSubpassDescription subpass = {};
 	subpass.pipelineBindPoint = VK_PIPELINE_BIND_POINT_GRAPHICS;
 	subpass.colorAttachmentCount = static_cast<uint32_t>(colorAttachmentRefs.size());
-	subpass.pColorAttachments = colorAttachmentRefs.data();
+	subpass.pColorAttachments = preResolveAttachments.size() > 0 ? preResolveAttachmentRefs.data() : colorAttachmentRefs.data();
 	if(depthAttachments.size() > 0)
 		subpass.pDepthStencilAttachment = &depthAttachmentRef;//depth, only the first one will be used
+	if(preResolveAttachments.size() > 0)
+		subpass.pResolveAttachments = colorAttachmentRefs.data();
 
 	VkSubpassDependency dependency = {};
 	dependency.srcSubpass = VK_SUBPASS_EXTERNAL;
@@ -509,10 +572,16 @@ void Renderer::CreateRenderPass(VkRenderPass& renderPass, const std::vector<VkAt
 	dependency.srcAccessMask = 0;
 	dependency.dstStageMask = VK_PIPELINE_STAGE_COLOR_ATTACHMENT_OUTPUT_BIT;
 	dependency.dstAccessMask = VK_ACCESS_COLOR_ATTACHMENT_READ_BIT | VK_ACCESS_COLOR_ATTACHMENT_WRITE_BIT;
-
-	std::vector<VkAttachmentDescription> attachments = colorAttachments;
+	
+	//render pass
+	//The idea is when msaa is enabled, the rendering results will be resolved to color attachments,
+	//when msaa is disabled, the rendering results will be rendered to color attachments.
+	std::vector<VkAttachmentDescription> attachments = preResolveAttachments.size() > 0 ? preResolveAttachments : colorAttachments;
 	if (depthAttachments.size() > 0) 
 		attachments.push_back(depthAttachments[0]);//depth, only the first one will be used
+	//append colorAttachments to the end of attachments
+	if (preResolveAttachments.size() > 0)
+		attachments.insert(attachments.end(), colorAttachments.begin(), colorAttachments.end());
 	VkRenderPassCreateInfo renderPassInfo = {};
 	renderPassInfo.sType = VK_STRUCTURE_TYPE_RENDER_PASS_CREATE_INFO;
 	renderPassInfo.attachmentCount = static_cast<uint32_t>(attachments.size());
@@ -527,7 +596,7 @@ void Renderer::CreateRenderPass(VkRenderPass& renderPass, const std::vector<VkAt
 	}
 }
 
-//This is an error-tolerant function, all mesh will have the same amount of texture slot, but some may use less.
+//This is an error-tolerant function, all frame will have the same amount of texture slot, but some may use less.
 //You won't have any debug layer error with this, but the texture with higher slot number will remain the same for those who use less slots.
 VkDescriptorSetLayout Renderer::GetLargestFrameDescriptorSetLayout() const
 {
@@ -547,7 +616,7 @@ VkDescriptorSetLayout Renderer::GetLargestFrameDescriptorSetLayout() const
 	return result;
 }
 
-//This is a conservative function, all mesh will have the same number of texture slot, but textures with higher slot number will be omitted.
+//This is a conservative function, all frame will have the same number of texture slot, but textures with higher slot number will be omitted.
 //You will have a debug layer error when you want to bind more textures than the descriptor set layout allows.
 VkDescriptorSetLayout Renderer::GetSmallestFrameDescriptorSetLayout() const
 {
@@ -659,8 +728,6 @@ void Renderer::CreateDescriptorPool(VkDescriptorPool& descriptorPool, uint32_t m
 
 void Renderer::CreateCommandPool(VkCommandPool& _commandPool)
 {
-	QueueFamilyIndices queueFamilyIndices = FindQueueFamilies(physicalDevice);
-
 	VkCommandPoolCreateInfo poolInfo = {};
 	poolInfo.sType = VK_STRUCTURE_TYPE_COMMAND_POOL_CREATE_INFO;
 	poolInfo.queueFamilyIndex = queueFamilyIndices.graphicsFamily.value();
@@ -694,6 +761,8 @@ void Renderer::CreatePipeline(
 	VkPipelineLayout& pipelineLayout,
 	VkRenderPass renderPass,
 	const std::vector<VkDescriptorSetLayout>& descriptorSetLayout,
+	VkExtent2D extent,
+	VkSampleCountFlagBits msaaSamples,
 	Shader* pVertShader,
 	Shader* pTesCtrlShader,
 	Shader* pTesEvalShader,
@@ -744,14 +813,14 @@ void Renderer::CreatePipeline(
 	VkViewport viewport = {};
 	viewport.x = 0.0f;
 	viewport.y = 0.0f;
-	viewport.width = (float)swapChainExtent.width;
-	viewport.height = (float)swapChainExtent.height;
+	viewport.width = (float)extent.width;
+	viewport.height = (float)extent.height;
 	viewport.minDepth = 0.0f;
 	viewport.maxDepth = 1.0f;
 
 	VkRect2D scissor = {};
 	scissor.offset = { 0, 0 };
-	scissor.extent = swapChainExtent;
+	scissor.extent = extent;
 
 	VkPipelineViewportStateCreateInfo viewportState = {};
 	viewportState.sType = VK_STRUCTURE_TYPE_PIPELINE_VIEWPORT_STATE_CREATE_INFO;
@@ -869,6 +938,8 @@ void Renderer::CreatePipeline(
 		pipelineLayout,
 		pass.HasRenderTexture() ? pass.GetRenderPass() : swapChainRenderPass,
 		descriptorSetLayouts,
+		pass.HasRenderTexture() ? pass.GetExtent() : swapChainExtent,
+		pass.HasRenderTexture() ? pass.GetMsaaSamples() : swapChainMsaaSamples,
 		pass.GetShader(Shader::ShaderType::VertexShader),
 		pass.GetShader(Shader::ShaderType::TessellationControlShader),
 		pass.GetShader(Shader::ShaderType::TessellationEvaluationShader),
@@ -877,32 +948,51 @@ void Renderer::CreatePipeline(
 	);
 }
 
-void Renderer::RecordCommandOverride(
+void Renderer::RecordCommand(
+	glm::vec4 colorClear,
+	glm::vec2 depthStencilClear,
 	Pass& pass,
 	VkCommandBuffer commandBuffer,
 	VkPipeline pipeline,
 	VkPipelineLayout pipelineLayout,
-	VkRenderPass renderPass,
-	VkFramebuffer frameBuffer,
-	VkExtent2D extent)
+	VkRenderPass renderPassFallback,
+	VkFramebuffer frameBufferFallback,
+	VkExtent2D extentFallback)
 {
 
 	bool customRenderTarget = pass.HasRenderTexture();
+	int rtCount = 0;
+
+	//clear values
+	std::vector<VkClearValue> clearValues;
+	if (customRenderTarget)
+	{
+		//multiple render target is only available and meaningfull when rendering to render textures
+		//only under this situation can there be more than one color attachment
+		//color always comes before depth stencil
+		rtCount = pass.GetRenderTextureCount();
+	}
+	else
+	{
+		//when rendering to swapchain, only one color attachment will be cleared
+		//color always comes before depth stencil
+		rtCount = 1;
+	}
+
+	VkClearValue clearValue;
+	clearValue.color = { colorClear.r, colorClear.g, colorClear.b, colorClear.a };
+	clearValues.resize(rtCount + 1, clearValue);//only one depth stencil attachment will be present
+	clearValues[rtCount].depthStencil = { depthStencilClear.r, static_cast<uint32_t>(depthStencilClear.g) };
 
 	//bind pass descriptor set
 	vkCmdBindDescriptorSets(commandBuffer, VK_PIPELINE_BIND_POINT_GRAPHICS, pipelineLayout, static_cast<int>(UNIFORM_SLOT::PASS), 1, pass.GetPassDescriptorSetPtr(), 0, nullptr);
 
-	//clear values
-	std::array<VkClearValue, 2> clearValues = {};
-	clearValues[0].color = { 0.3f, 0.6f, 1.0f, 1.0f };
-	clearValues[1].depthStencil = { 1.0f, 0 };
-
 	VkRenderPassBeginInfo renderPassInfo = {};
 	renderPassInfo.sType = VK_STRUCTURE_TYPE_RENDER_PASS_BEGIN_INFO;
-	renderPassInfo.renderPass = customRenderTarget ? pass.GetRenderPass() : renderPass;
-	renderPassInfo.framebuffer = customRenderTarget ? pass.GetFramebuffer() : frameBuffer;
+	renderPassInfo.renderPass = customRenderTarget ? pass.GetRenderPass() : renderPassFallback;
+	renderPassInfo.framebuffer = customRenderTarget ? pass.GetFramebuffer() : frameBufferFallback;
 	renderPassInfo.renderArea.offset = { 0, 0 };
-	renderPassInfo.renderArea.extent = customRenderTarget ? pass.GetExtent() : extent;
+	renderPassInfo.renderArea.extent = customRenderTarget ? pass.GetExtent() : extentFallback;
 	renderPassInfo.clearValueCount = static_cast<uint32_t>(clearValues.size());
 	renderPassInfo.pClearValues = clearValues.data();
 
@@ -1085,7 +1175,7 @@ void Renderer::PickPhysicalDevice()
 	for (const auto& device : devices) {
 		if (IsDeviceSuitable(device)) {
 			physicalDevice = device;
-			msaaSamples = GetMaxUsableSampleCount();
+			swapChainMsaaSamples = FindMaxUsableSampleCount();
 			break;
 		}
 	}
@@ -1097,10 +1187,10 @@ void Renderer::PickPhysicalDevice()
 
 void Renderer::CreateLogicalDevice()
 {
-	QueueFamilyIndices indices = FindQueueFamilies(physicalDevice);
+	queueFamilyIndices = FindQueueFamilies(physicalDevice);
 
 	std::vector<VkDeviceQueueCreateInfo> queueCreateInfos;
-	std::set<uint32_t> uniqueQueueFamilies = { indices.graphicsFamily.value(), indices.presentFamily.value() };
+	std::set<uint32_t> uniqueQueueFamilies = { queueFamilyIndices.graphicsFamily.value(), queueFamilyIndices.presentFamily.value() };
 
 	float queuePriority = 1.0f;
 	for (uint32_t queueFamily : uniqueQueueFamilies) {
@@ -1139,8 +1229,8 @@ void Renderer::CreateLogicalDevice()
 		throw std::runtime_error("failed to create logical device!");
 	}
 
-	vkGetDeviceQueue(device, indices.graphicsFamily.value(), 0, &graphicsQueue);
-	vkGetDeviceQueue(device, indices.presentFamily.value(), 0, &presentQueue);
+	vkGetDeviceQueue(device, queueFamilyIndices.graphicsFamily.value(), 0, &graphicsQueue);
+	vkGetDeviceQueue(device, queueFamilyIndices.presentFamily.value(), 0, &presentQueue);
 }
 
 bool Renderer::IsDeviceSuitable(VkPhysicalDevice device) {
@@ -1251,13 +1341,12 @@ void Renderer::CreateSwapChain()
 	createInfo.imageArrayLayers = 1;
 	createInfo.imageUsage = VK_IMAGE_USAGE_COLOR_ATTACHMENT_BIT;
 
-	QueueFamilyIndices indices = FindQueueFamilies(physicalDevice);
-	uint32_t queueFamilyIndices[] = { indices.graphicsFamily.value(), indices.presentFamily.value() };
+	uint32_t indices[] = { queueFamilyIndices.graphicsFamily.value(), queueFamilyIndices.presentFamily.value() };
 
-	if (indices.graphicsFamily != indices.presentFamily) {
+	if (queueFamilyIndices.graphicsFamily != queueFamilyIndices.presentFamily) {
 		createInfo.imageSharingMode = VK_SHARING_MODE_CONCURRENT;
 		createInfo.queueFamilyIndexCount = 2;
-		createInfo.pQueueFamilyIndices = queueFamilyIndices;
+		createInfo.pQueueFamilyIndices = indices;
 	}
 	else {
 		createInfo.imageSharingMode = VK_SHARING_MODE_EXCLUSIVE;
@@ -1295,17 +1384,17 @@ void Renderer::CleanUpSwapChain()
 	vkDestroyImage(device, depthImage, nullptr);
 	vkFreeMemory(device, depthImageMemory, nullptr);
 
+	//swap chain related
 	for (auto framebuffer : swapChainFramebuffers) 
 	{
 		vkDestroyFramebuffer(device, framebuffer, nullptr);
 	}
 
-	vkFreeCommandBuffers(device, defaultCommandPool, static_cast<uint32_t>(defaultCommandBuffers.size()), defaultCommandBuffers.data());
-	vkDestroyDescriptorPool(device, defaultDescriptorPool, nullptr);//descriptor pool is related to swap chain images size
-
 	for (auto imageView : swapChainImageViews) {
 		vkDestroyImageView(device, imageView, nullptr);
 	}
+
+	vkDestroyRenderPass(device, swapChainRenderPass, nullptr);
 
 	vkDestroySwapchainKHR(device, swapChain, nullptr);
 
@@ -1314,6 +1403,17 @@ void Renderer::CleanUpSwapChain()
 	{
 		frame.CleanUp();
 	}
+
+	//default resources
+	vkFreeCommandBuffers(device, defaultCommandPool, static_cast<uint32_t>(defaultCommandBuffers.size()), defaultCommandBuffers.data());
+	vkDestroyDescriptorPool(device, defaultDescriptorPool, nullptr);//descriptor pool is related to swap chain images size
+
+	//custom pipelines
+	vkDestroyPipeline(device, graphicsPipeline, nullptr);
+	vkDestroyPipelineLayout(device, graphicsPipelineLayout, nullptr);
+
+	vkDestroyPipeline(device, offscreenPipeline, nullptr);
+	vkDestroyPipelineLayout(device, offscreenPipelineLayout, nullptr);
 }
 
 void Renderer::CreateImageViews() 
@@ -1384,7 +1484,7 @@ void Renderer::CreateColorResources() {
 		swapChainExtent.width, 
 		swapChainExtent.height, 
 		1,
-		msaaSamples,
+		swapChainMsaaSamples,
 		colorFormat,
 		VK_IMAGE_TILING_OPTIMAL,
 		VK_IMAGE_USAGE_TRANSIENT_ATTACHMENT_BIT | VK_IMAGE_USAGE_COLOR_ATTACHMENT_BIT,
@@ -1405,7 +1505,7 @@ void Renderer::CreateDepthResources()
 		swapChainExtent.width, 
 		swapChainExtent.height, 
 		1,
-		msaaSamples,
+		swapChainMsaaSamples,
 		depthFormat,
 		VK_IMAGE_TILING_OPTIMAL,
 		VK_IMAGE_USAGE_DEPTH_STENCIL_ATTACHMENT_BIT,
@@ -1458,7 +1558,7 @@ void Renderer::CleanUp()
 
 }
 
-VkSampleCountFlagBits Renderer::GetMaxUsableSampleCount() 
+VkSampleCountFlagBits Renderer::FindMaxUsableSampleCount() 
 {
 	VkPhysicalDeviceProperties physicalDeviceProperties;
 	vkGetPhysicalDeviceProperties(physicalDevice, &physicalDeviceProperties);
@@ -1472,6 +1572,11 @@ VkSampleCountFlagBits Renderer::GetMaxUsableSampleCount()
 	if (counts & VK_SAMPLE_COUNT_2_BIT) { return VK_SAMPLE_COUNT_2_BIT; }
 
 	return VK_SAMPLE_COUNT_1_BIT;
+}
+
+uint32_t Renderer::GetGraphicsQueueFamilyIndex()
+{
+	return queueFamilyIndices.graphicsFamily.value();
 }
 
 void Renderer::CreateFrameUniformBuffers()
@@ -1489,7 +1594,7 @@ void Renderer::CreateSwapChainRenderPass()
 	//Therefore we will have to add only one new attachment for color which is a so-called resolve attachment.
 	VkAttachmentDescription colorAttachment = {};
 	colorAttachment.format = swapChainImageFormat;
-	colorAttachment.samples = msaaSamples;
+	colorAttachment.samples = swapChainMsaaSamples;
 	colorAttachment.loadOp = VK_ATTACHMENT_LOAD_OP_CLEAR;
 	colorAttachment.storeOp = VK_ATTACHMENT_STORE_OP_STORE;
 	colorAttachment.stencilLoadOp = VK_ATTACHMENT_LOAD_OP_DONT_CARE;
@@ -1507,7 +1612,7 @@ void Renderer::CreateSwapChainRenderPass()
 	//This may allow the hardware to perform additional optimizations.
 	VkAttachmentDescription depthAttachment = {};
 	depthAttachment.format = FindDepthFormat();
-	depthAttachment.samples = msaaSamples;
+	depthAttachment.samples = swapChainMsaaSamples;
 	depthAttachment.loadOp = VK_ATTACHMENT_LOAD_OP_CLEAR;
 	depthAttachment.storeOp = VK_ATTACHMENT_STORE_OP_DONT_CARE;
 	depthAttachment.stencilLoadOp = VK_ATTACHMENT_LOAD_OP_DONT_CARE;
@@ -1522,8 +1627,8 @@ void Renderer::CreateSwapChainRenderPass()
 	//to support msaa
 	VkAttachmentDescription colorAttachmentResolve = {};
 	colorAttachmentResolve.format = swapChainImageFormat;
-	colorAttachmentResolve.samples = VK_SAMPLE_COUNT_1_BIT;//different
-	colorAttachmentResolve.loadOp = VK_ATTACHMENT_LOAD_OP_DONT_CARE;
+	colorAttachmentResolve.samples = VK_SAMPLE_COUNT_1_BIT;//resolve attachment does not need msaa because it is the destination of the msaa resolve process
+	colorAttachmentResolve.loadOp = VK_ATTACHMENT_LOAD_OP_DONT_CARE;//resolve attachment does not need clear, beacuse it is a full screen operation
 	colorAttachmentResolve.storeOp = VK_ATTACHMENT_STORE_OP_STORE;
 	colorAttachmentResolve.stencilLoadOp = VK_ATTACHMENT_LOAD_OP_DONT_CARE;
 	colorAttachmentResolve.stencilStoreOp = VK_ATTACHMENT_STORE_OP_DONT_CARE;

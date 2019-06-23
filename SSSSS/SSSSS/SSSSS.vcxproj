@@ -89,7 +89,7 @@
       <RuntimeLibrary>MultiThreadedDebug</RuntimeLibrary>
     </ClCompile>
     <Link>
-      <AdditionalDependencies>glfw3d.lib;vulkan-1.lib;shaderc_sharedd.lib;shaderc_utild.lib;legacy_stdio_definitions.lib;%(AdditionalDependencies)</AdditionalDependencies>
+      <AdditionalDependencies>glfw3d.lib;vulkan-1.lib;shaderc_shared.lib;shaderc_util.lib;%(AdditionalDependencies)</AdditionalDependencies>
       <AdditionalLibraryDirectories>Dependencies\GLFW;Dependencies\Vulkan\lib;Dependencies\shaderc\debug;Dependencies\shaderc_util\debug;%(AdditionalLibraryDirectories)</AdditionalLibraryDirectories>
     </Link>
   </ItemDefinitionGroup>
@@ -138,6 +138,8 @@
     <ClCompile Include="Texture.cpp" />
   </ItemGroup>
   <ItemGroup>
+    <None Include="deferred.frag" />
+    <None Include="deferred.vert" />
     <None Include="GlobalInclude.glsl" />
     <None Include="standard.frag" />
     <None Include="standard.vert" />

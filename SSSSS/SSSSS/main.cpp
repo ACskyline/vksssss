@@ -11,30 +11,43 @@
 #include <iterator>
 
 const int WIDTH = 800;
-const int HEIGHT = 600;
+const int HEIGHT = 800;
 const int MAX_FRAMES_IN_FLIGHT = 2;//3 in total
 
 Renderer mRenderer(WIDTH, HEIGHT, MAX_FRAMES_IN_FLIGHT);
 Level mLevel("default name");
 Scene mScene("default scene");
+Pass mPassOffscreen("offscreen pass");
 Pass mPass("default pass");
 Shader mVertShader(Shader::ShaderType::VertexShader, "standard.vert");
 Shader mFragShader(Shader::ShaderType::FragmentShader, "standard.frag");
-Camera mCamera("default camera", glm::vec3(2, 2, 2), glm::vec3(0, 0, 0), glm::vec3(0, 0, 1), 45.f, WIDTH, HEIGHT, 0.1f, 10.f);
+Shader mDeferredVertShader(Shader::ShaderType::VertexShader, "deferred.vert");
+Shader mDeferredFragShader(Shader::ShaderType::FragmentShader, "deferred.frag");
+Camera mCamera("default camera", glm::vec3(0, 0, 2), glm::vec3(0, 0, 0), glm::vec3(1, 1, 0), 45.f, WIDTH, HEIGHT, 0.1f, 10.f);
+Camera mCameraOffscreen("offscreen camera", glm::vec3(0, 0, 2), glm::vec3(0, 0, 0), glm::vec3(0, 1, 0), 45.f, WIDTH, HEIGHT, 0.1f, 10.f);
 Mesh mMesh("square", Mesh::MeshType::Square, glm::vec3(0, 0, 0), glm::vec3(0, 0, 0), glm::vec3(1, 1, 1));
 Texture mTexture("rex.png", VK_FORMAT_R8G8B8A8_UNORM);
+RenderTexture mRenderTexture("offscreen rt", WIDTH, HEIGHT, 1, VK_FORMAT_R8G8B8A8_UNORM, true, false);
 
 void CreatePasses()
 {
+	mPassOffscreen.SetCamera(&mCameraOffscreen);
+	mPassOffscreen.AddMesh(&mMesh);
+	mPassOffscreen.AddTexture(&mTexture);
+	mPassOffscreen.AddRenderTexture(&mRenderTexture);
+	mPassOffscreen.AddShader(&mVertShader);
+	mPassOffscreen.AddShader(&mFragShader);
+
 	mPass.SetCamera(&mCamera);
 	mPass.AddMesh(&mMesh);
-	mPass.AddTexture(&mTexture);//per pass texture
-	mPass.AddShader(&mVertShader);
-	mPass.AddShader(&mFragShader);
+	mPass.AddTexture(&mRenderTexture);
+	mPass.AddShader(&mDeferredVertShader);
+	mPass.AddShader(&mDeferredFragShader);
 }
 
 void CreateScenes()
 {
+	mScene.AddPass(&mPassOffscreen);
 	mScene.AddPass(&mPass);
 }
 
@@ -43,10 +56,14 @@ void CreateLevels()
 	mLevel.AddCamera(&mCamera);
 	mLevel.AddMesh(&mMesh);
 	mLevel.AddPass(&mPass);
+	mLevel.AddPass(&mPassOffscreen);
 	mLevel.AddScene(&mScene);
 	mLevel.AddShader(&mVertShader);
 	mLevel.AddShader(&mFragShader);
+	mLevel.AddShader(&mDeferredVertShader);
+	mLevel.AddShader(&mDeferredFragShader);
 	mLevel.AddTexture(&mTexture);
+	mLevel.AddTexture(&mRenderTexture);
 }
 
 void CreateWindow() 
@@ -83,6 +100,12 @@ void CreateRenderer()
 
 	//4.pipelines
 	mRenderer.CreatePipeline(
+		mRenderer.offscreenPipeline,
+		mRenderer.offscreenPipelineLayout,
+		mRenderer.GetLargestFrameDescriptorSetLayout(),
+		mPassOffscreen);
+
+	mRenderer.CreatePipeline(
 		mRenderer.graphicsPipeline,
 		mRenderer.graphicsPipelineLayout,
 		mRenderer.GetLargestFrameDescriptorSetLayout(),
@@ -117,7 +140,27 @@ void Draw()
 		nullptr);
 
 	//1st pass
-	mRenderer.RecordCommandOverride(
+
+	mRenderTexture.TransitionLayoutToWrite(mRenderer.defaultCommandBuffers[imageIndex]);
+
+	mRenderer.RecordCommand(
+		glm::vec4(0.8, 0.7, 0.8, 1.0),
+		glm::vec2(1.0, 0),
+		mPassOffscreen,
+		mRenderer.defaultCommandBuffers[imageIndex],
+		mRenderer.offscreenPipeline,
+		mRenderer.offscreenPipelineLayout,
+		mRenderer.swapChainRenderPass,
+		mRenderer.swapChainFramebuffers[imageIndex],
+		mRenderer.swapChainExtent);
+	
+	//2nd pass
+
+	mRenderTexture.TransitionLayoutToRead(mRenderer.defaultCommandBuffers[imageIndex]);
+
+	mRenderer.RecordCommand(
+		glm::vec4(0.3, 0.6, 1.0, 1.0),
+		glm::vec2(1.0, 0),
 		mPass,
 		mRenderer.defaultCommandBuffers[imageIndex],
 		mRenderer.graphicsPipeline,
@@ -161,5 +204,6 @@ int main()
 		return EXIT_FAILURE;
 	}
 
+	getchar();
 	return EXIT_SUCCESS;
 }

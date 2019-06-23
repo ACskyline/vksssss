@@ -48,18 +48,25 @@ private:
 class RenderTexture : public Texture
 {
 public:
-	RenderTexture(const std::string& _name, int _width, int _height, uint32_t _mipLevel, VkFormat _colorFormat, bool _supportDepth);
+	RenderTexture(const std::string& _name, int _width, int _height, uint32_t _mipLevels, VkFormat _colorFormat, bool _supportDepth, bool _supportMsaa);
 	virtual ~RenderTexture();
 
 	void virtual InitTexture(Renderer* _pRenderer);
 
 	void virtual CleanUp();
 
+	VkSampleCountFlagBits GetMsaaSamples() const;
 	VkAttachmentDescription GetColorAttachment() const;
 	VkAttachmentDescription GetDepthAttachment() const;
+	VkAttachmentDescription GetPreResolveAttachment() const;
 	VkImageView GetColorImageView() const;
 	VkImageView GetDepthImageView() const;
+	VkImageView GetPreResolveImageView() const;
 	bool SupportDepth();
+	bool SupportMsaa();
+
+	void TransitionLayoutToWrite(VkCommandBuffer commandBuffer);
+	void TransitionLayoutToRead(VkCommandBuffer commandBuffer);
 
 private:
 
@@ -78,6 +85,15 @@ private:
 	VkImageView depthImageView; 
 	VkFormat depthFormat;
 	VkAttachmentDescription depthAttachment;
+
+	// ~ resolve buffer ~
+
+	bool supportMsaa;
+	VkSampleCountFlagBits msaaSamples;
+	VkImage preResolveImage;
+	VkDeviceMemory preResolveImageMemory;
+	VkImageView preResolveImageView;
+	VkAttachmentDescription preResolveAttachment;
 
 	// ~ vulkan functions ~
 

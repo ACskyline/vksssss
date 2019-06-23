@@ -5,7 +5,7 @@
 #include "Mesh.h"
 #include "Renderer.h"
 
-Pass::Pass(const std::string& _name) : 
+Pass::Pass(const std::string& _name) :
 	pRenderer(nullptr), pScene(nullptr), pCamera(nullptr), name(_name)
 {
 	for (auto& pShader : pShaderArr)
@@ -23,14 +23,17 @@ Pass::~Pass()
 
 void Pass::AddMesh(Mesh* _pMesh)
 {
-	if(_pMesh!=nullptr)
-		pMeshVec.push_back(_pMesh);
+	pMeshVec.push_back(_pMesh);
 }
 
 void Pass::AddTexture(Texture* _pTexture)
 {
-	if (_pTexture != nullptr)
-		pTextureVec.push_back(_pTexture);
+	pTextureVec.push_back(_pTexture);
+}
+
+void Pass::AddRenderTexture(RenderTexture* pRenderTexture)
+{
+	pRenderTextureVec.push_back(pRenderTexture);
 }
 
 void Pass::SetCamera(Camera* _pCamera)
@@ -48,9 +51,31 @@ void Pass::AddShader(Shader* pShader)
 	pShaderArr[static_cast<int>(pShader->GetShaderType())] = pShader;
 }
 
+int Pass::GetRenderTextureCount() const
+{
+	return static_cast<int>(pRenderTextureVec.size());
+}
+
 bool Pass::HasRenderTexture() const
 {
 	return pRenderTextureVec.size() > 0;
+}
+
+VkSampleCountFlagBits Pass::GetMsaaSamples() const
+{
+	if (pRenderTextureVec.size() <= 0)
+	{
+		return VK_SAMPLE_COUNT_1_BIT;
+	}
+	else
+	{
+		for (auto pRenderTexture : pRenderTextureVec)
+		{
+			if (pRenderTexture->SupportMsaa())
+				return pRenderTexture->GetMsaaSamples();
+		}
+	}
+	return VK_SAMPLE_COUNT_1_BIT;
 }
 
 uint32_t Pass::GetUboCount() const
@@ -186,32 +211,41 @@ void Pass::InitPass(
 		pRenderer->BindTextureToDescriptorSets(pTextureVec[i]->GetTextureImageView(), pTextureVec[i]->GetSampler(), { passDescriptorSet }, 1 + i);//only 1 pUBO, so offset is 1
 	}
 
-	//renderPass, extent and potentially framebuffer
+	//renderPass, extent and framebuffer
 	if (pRenderTextureVec.size() > 0)
 	{
 		std::vector<VkAttachmentDescription> colorAttachments(pRenderTextureVec.size());
 		std::vector<VkAttachmentDescription> depthAttachments;
+		std::vector<VkAttachmentDescription> preResolveAttachments;
 		std::vector<VkImageView> colorViews(pRenderTextureVec.size());
 		std::vector<VkImageView> depthViews;
-		int width = 0;
-		int height = 0;
+		std::vector<VkImageView> preResolveViews;
+		int widthMax = 0;
+		int heightMax = 0;
 		for (int i = 0; i < pRenderTextureVec.size(); i++)
 		{
-			if (width < pRenderTextureVec[i]->GetWidth()) width = pRenderTextureVec[i]->GetWidth();
-			if (height < pRenderTextureVec[i]->GetHeight()) height = pRenderTextureVec[i]->GetHeight();
+			if (widthMax < pRenderTextureVec[i]->GetWidth()) widthMax = pRenderTextureVec[i]->GetWidth();
+			if (heightMax < pRenderTextureVec[i]->GetHeight()) heightMax = pRenderTextureVec[i]->GetHeight();
 
 			colorAttachments[i] = pRenderTextureVec[i]->GetColorAttachment();
 			colorViews[i] = pRenderTextureVec[i]->GetColorImageView();
+
 			if (pRenderTextureVec[i]->SupportDepth())
 			{
 				depthAttachments.push_back(pRenderTextureVec[i]->GetDepthAttachment());
 				depthViews.push_back(pRenderTextureVec[i]->GetDepthImageView());
 			}
+
+			if (pRenderTextureVec[i]->SupportMsaa())
+			{
+				preResolveAttachments.push_back(pRenderTextureVec[i]->GetPreResolveAttachment());
+				preResolveViews.push_back(pRenderTextureVec[i]->GetPreResolveImageView());
+			}
 		}
-		extent.height = height;
-		extent.width = width;
-		pRenderer->CreateRenderPass(renderPass, colorAttachments, depthAttachments);
-		pRenderer->CreateFramebuffer(framebuffer, colorViews, depthViews, renderPass, width, height);
+		extent.height = heightMax;
+		extent.width = widthMax;
+		pRenderer->CreateRenderPass(renderPass, preResolveAttachments, depthAttachments, colorAttachments);
+		pRenderer->CreateFramebuffer(framebuffer, preResolveViews, depthViews, colorViews, renderPass, widthMax, heightMax);
 	}
 	else
 	{
@@ -222,25 +256,45 @@ void Pass::InitPass(
 
 void Pass::RecreateFramebuffer()
 {
+	//release the last one
 	vkDestroyFramebuffer(pRenderer->GetDevice(), framebuffer, nullptr);
-	std::vector<VkImageView> colorViews(pRenderTextureVec.size());
-	std::vector<VkImageView> depthViews;
-	int width = 0;
-	int height = 0;
-	for (int i = 0; i < pRenderTextureVec.size(); i++)
-	{
-		if (width < pRenderTextureVec[i]->GetWidth()) width = pRenderTextureVec[i]->GetWidth();
-		if (height < pRenderTextureVec[i]->GetHeight()) height = pRenderTextureVec[i]->GetHeight();
 
-		colorViews[i] = pRenderTextureVec[i]->GetColorImageView();
-		if (pRenderTextureVec[i]->SupportDepth())
+	if (pRenderTextureVec.size() > 0)
+	{
+		//create a new one
+		std::vector<VkAttachmentDescription> colorAttachments(pRenderTextureVec.size());
+		std::vector<VkAttachmentDescription> depthAttachments;
+		std::vector<VkAttachmentDescription> preResolveAttachments;
+		std::vector<VkImageView> colorViews(pRenderTextureVec.size());
+		std::vector<VkImageView> depthViews;
+		std::vector<VkImageView> preResolveViews;
+		int widthMax = 0;
+		int heightMax = 0;
+		for (int i = 0; i < pRenderTextureVec.size(); i++)
 		{
-			depthViews.push_back(pRenderTextureVec[i]->GetDepthImageView());
+			if (widthMax < pRenderTextureVec[i]->GetWidth()) widthMax = pRenderTextureVec[i]->GetWidth();
+			if (heightMax < pRenderTextureVec[i]->GetHeight()) heightMax = pRenderTextureVec[i]->GetHeight();
+
+			colorAttachments[i] = pRenderTextureVec[i]->GetColorAttachment();
+			colorViews[i] = pRenderTextureVec[i]->GetColorImageView();
+
+			if (pRenderTextureVec[i]->SupportDepth())
+			{
+				depthAttachments.push_back(pRenderTextureVec[i]->GetDepthAttachment());
+				depthViews.push_back(pRenderTextureVec[i]->GetDepthImageView());
+			}
+
+			if (pRenderTextureVec[i]->SupportMsaa())
+			{
+				preResolveAttachments.push_back(pRenderTextureVec[i]->GetPreResolveAttachment());
+				preResolveViews.push_back(pRenderTextureVec[i]->GetPreResolveImageView());
+			}
 		}
+		extent.height = heightMax;
+		extent.width = widthMax;
+		pRenderer->CreateRenderPass(renderPass, preResolveAttachments, depthAttachments, colorAttachments);
+		pRenderer->CreateFramebuffer(framebuffer, preResolveViews, depthViews, colorViews, renderPass, widthMax, heightMax);
 	}
-	extent.height = height;
-	extent.width = width;
-	pRenderer->CreateFramebuffer(framebuffer, colorViews, depthViews, renderPass, width, height);
 }
 
 void Pass::ChangeRenderTexture(uint32_t slot, RenderTexture* pRenderTexture)

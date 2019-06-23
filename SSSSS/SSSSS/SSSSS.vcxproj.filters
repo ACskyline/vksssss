@@ -50,14 +50,20 @@
     </ClCompile>
   </ItemGroup>
   <ItemGroup>
-    <None Include="standard.vert">
-      <Filter>Source Files</Filter>
-    </None>
-    <None Include="standard.frag">
-      <Filter>Source Files</Filter>
-    </None>
     <None Include="GlobalInclude.glsl">
       <Filter>Source Files</Filter>
+    </None>
+    <None Include="standard.vert">
+      <Filter>Resource Files</Filter>
+    </None>
+    <None Include="deferred.frag">
+      <Filter>Resource Files</Filter>
+    </None>
+    <None Include="deferred.vert">
+      <Filter>Resource Files</Filter>
+    </None>
+    <None Include="standard.frag">
+      <Filter>Resource Files</Filter>
     </None>
   </ItemGroup>
   <ItemGroup>
