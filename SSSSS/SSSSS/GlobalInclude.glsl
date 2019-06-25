@@ -30,4 +30,10 @@ layout(set = PASS_SET, binding = UBO_SLOT(PASS, 0)) uniform PassUniformBufferObj
 
 layout(set = OBJECT_SET, binding = UBO_SLOT(OBJECT, 0)) uniform ObjectUniformBufferObject {
     mat4 model;
+	mat4 modelInvTrans;
 } objectUBO;
+
+vec2 FlipV(vec2 uv)
+{
+	return vec2(uv.x, 1.0 - uv.y);
+}

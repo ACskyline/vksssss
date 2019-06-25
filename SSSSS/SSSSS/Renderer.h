@@ -26,6 +26,22 @@ public:
 	// ~ get general vulkan resources ~
 
 	VkDevice GetDevice() const;
+	VkPhysicalDevice GetPhysicalDevice() const;
+	VkInstance GetInstance() const;
+	VkQueue GetGraphicsQueue() const;
+	uint32_t GetGraphicsQueueFamilyIndex() const;
+	GLFWwindow* GetWindow() const;
+	VkSampleCountFlagBits GetSwapChainMsaaSamples() const;
+
+	// ~ utility ~
+
+	VkFormat FindDepthFormat();
+	VkSampleCountFlagBits FindMaxUsableSampleCount();
+
+	// ~ clean up ~
+
+	void IdleWait();
+	void CleanUp();
 
 	// ~ general gpu resource operations ~
 
@@ -90,17 +106,6 @@ public:
 	void BindTextureToDescriptorSets(VkImageView textureImageView, VkSampler textureSampler, const std::vector<VkDescriptorSet>& descriptorSets, uint32_t binding);
 	//void BindTextureToDescriptorSetsCmd(VkCommandBuffer commandBuffer, VkPipelineLayout pipelineLayout, VkImageView textureImageView, VkSampler textureSampler, const std::vector<VkDescriptorSet>& descriptorSets, uint32_t set, uint32_t binding);
 
-	// ~ utility ~
-
-	VkFormat FindDepthFormat();
-	VkSampleCountFlagBits FindMaxUsableSampleCount();
-	uint32_t GetGraphicsQueueFamilyIndex();
-
-	// ~ clean up ~
-
-	void IdleWait();
-	void CleanUp();
-
 	// ~ general pipeline functions ~
 
 	//#This is an error-tolerant function, all mesh will have the same amount of texture slot, but some may use less.
@@ -112,9 +117,9 @@ public:
 	VkDescriptorSetLayout GetSmallestFrameDescriptorSetLayout() const;
 
 	//return imageIndex if it can be accquired
-	uint32_t BeginCommandBuffer(const std::vector<VkCommandBuffer>& commandBuffers);
-
-	void EndCommandBuffer(const std::vector<VkCommandBuffer>& commandBuffers, uint32_t imageIndex);
+	uint32_t WaitForFence();
+	void BeginCommandBuffer(VkCommandBuffer commandBuffer);
+	void EndCommandBuffer(VkCommandBuffer commandBuffer, uint32_t imageIndex);
 
 	void CreateDescriptorSetLayout(
 		VkDescriptorSetLayout& descriptorSetLayout, 
@@ -178,6 +183,19 @@ public:
 		VkRenderPass renderPassFallback,
 		VkFramebuffer frameBufferFallback,
 		VkExtent2D extentFallback);
+
+	void RecordCommandNoEnd(
+		glm::vec4 colorClear,
+		glm::vec2 depthStencilClear,
+		Pass& pass,
+		VkCommandBuffer commandBuffer,
+		VkPipeline pipeline,
+		VkPipelineLayout pipelineLayout,
+		VkRenderPass renderPassFallback,
+		VkFramebuffer frameBufferFallback,
+		VkExtent2D extentFallback);
+
+	void RecordCommandEnd(VkCommandBuffer commandBuffer);
 
 	// ~ window ~
 

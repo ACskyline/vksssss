@@ -76,6 +76,7 @@ private:
 	//VkDeviceMemory colorImageMemory; //use textureImageMemory instead
 	VkImageView colorImageView;
 	VkAttachmentDescription colorAttachment;
+	VkImageLayout currentLayout;
 
 	// ~ depth buffer ~
 

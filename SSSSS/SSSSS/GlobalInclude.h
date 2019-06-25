@@ -31,6 +31,7 @@ struct PassUniformBufferObject {
 //stored in mesh
 struct ObjectUniformBufferObject {
 	glm::mat4 model;
+	glm::mat4 modelInvTrans;
 };
 
 //stored in renderer (because related to swap chain)
@@ -40,7 +41,7 @@ struct FrameUniformBufferObject {
 
 struct Vertex {
 	glm::vec3 pos;
-	glm::vec3 color;
+	glm::vec3 normal;
 	glm::vec2 texCoord;
 
 	static VkVertexInputBindingDescription getBindingDescription() {
@@ -63,7 +64,7 @@ struct Vertex {
 		attributeDescriptions[1].binding = 0;
 		attributeDescriptions[1].location = 1;
 		attributeDescriptions[1].format = VK_FORMAT_R32G32B32_SFLOAT;
-		attributeDescriptions[1].offset = offsetof(Vertex, color);
+		attributeDescriptions[1].offset = offsetof(Vertex, normal);
 
 		attributeDescriptions[2].binding = 0;
 		attributeDescriptions[2].location = 2;

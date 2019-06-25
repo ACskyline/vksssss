@@ -120,6 +120,36 @@ VkDevice Renderer::GetDevice() const
 	return device;
 }
 
+VkPhysicalDevice Renderer::GetPhysicalDevice() const
+{
+	return physicalDevice;
+}
+
+VkInstance Renderer::GetInstance() const
+{
+	return instance;
+}
+
+VkQueue Renderer::GetGraphicsQueue() const
+{
+	return graphicsQueue;
+}
+
+uint32_t Renderer::GetGraphicsQueueFamilyIndex() const
+{
+	return queueFamilyIndices.graphicsFamily.value();
+}
+
+GLFWwindow* Renderer::GetWindow() const
+{
+	return window;
+}
+
+VkSampleCountFlagBits Renderer::GetSwapChainMsaaSamples() const
+{
+	return swapChainMsaaSamples;
+}
+
 // ~ general gpu resource operations ~
 
 void Renderer::CreateBuffer(VkDeviceSize size, VkBufferUsageFlags usage, VkMemoryPropertyFlags properties, VkBuffer& buffer, VkDeviceMemory& bufferMemory)
@@ -706,11 +736,21 @@ void Renderer::CreateDescriptorSet(VkDescriptorSet& descriptorSet, VkDescriptorP
 void Renderer::CreateDescriptorPool(VkDescriptorPool& descriptorPool, uint32_t maxSets, uint32_t uboCount, uint32_t texCount)
 {
 	//two types of descriptors: ubo and combined texture
-	std::array<VkDescriptorPoolSize, 2> poolSizes = {};
-	poolSizes[0].type = VK_DESCRIPTOR_TYPE_UNIFORM_BUFFER;
-	poolSizes[0].descriptorCount = uboCount;
-	poolSizes[1].type = VK_DESCRIPTOR_TYPE_COMBINED_IMAGE_SAMPLER;
-	poolSizes[1].descriptorCount = texCount;
+	std::vector<VkDescriptorPoolSize> poolSizes;
+	if (uboCount > 0)
+	{
+		VkDescriptorPoolSize uboDescriptors = {};
+		uboDescriptors.type = VK_DESCRIPTOR_TYPE_UNIFORM_BUFFER;
+		uboDescriptors.descriptorCount = uboCount;
+		poolSizes.push_back(uboDescriptors);
+	}
+	if (texCount > 0)
+	{
+		VkDescriptorPoolSize texDescriptors = {};
+		texDescriptors.type = VK_DESCRIPTOR_TYPE_COMBINED_IMAGE_SAMPLER;
+		texDescriptors.descriptorCount = texCount;
+		poolSizes.push_back(texDescriptors);
+	}
 
 	VkDescriptorPoolCreateInfo poolInfo = {};
 	poolInfo.sType = VK_STRUCTURE_TYPE_DESCRIPTOR_POOL_CREATE_INFO;
@@ -1010,11 +1050,85 @@ void Renderer::RecordCommand(
 
 		//bind vbo
 		vkCmdBindVertexBuffers(commandBuffer, 0, 1, vertexBuffers, offsets);
-		vkCmdBindIndexBuffer(commandBuffer, mesh->GetIndexBuffer(), 0, VK_INDEX_TYPE_UINT16);
+		vkCmdBindIndexBuffer(commandBuffer, mesh->GetIndexBuffer(), 0, VK_INDEX_TYPE_UINT32);
 		//draw call
 		vkCmdDrawIndexed(commandBuffer, static_cast<uint32_t>(mesh->GetIndexVec().size()), 1, 0, 0, 0);
 	}
 
+	//render pass end
+	vkCmdEndRenderPass(commandBuffer);
+}
+
+void Renderer::RecordCommandNoEnd(
+	glm::vec4 colorClear,
+	glm::vec2 depthStencilClear,
+	Pass& pass,
+	VkCommandBuffer commandBuffer,
+	VkPipeline pipeline,
+	VkPipelineLayout pipelineLayout,
+	VkRenderPass renderPassFallback,
+	VkFramebuffer frameBufferFallback,
+	VkExtent2D extentFallback)
+{
+
+	bool customRenderTarget = pass.HasRenderTexture();
+	int rtCount = 0;
+
+	//clear values
+	std::vector<VkClearValue> clearValues;
+	if (customRenderTarget)
+	{
+		//multiple render target is only available and meaningfull when rendering to render textures
+		//only under this situation can there be more than one color attachment
+		//color always comes before depth stencil
+		rtCount = pass.GetRenderTextureCount();
+	}
+	else
+	{
+		//when rendering to swapchain, only one color attachment will be cleared
+		//color always comes before depth stencil
+		rtCount = 1;
+	}
+
+	VkClearValue clearValue;
+	clearValue.color = { colorClear.r, colorClear.g, colorClear.b, colorClear.a };
+	clearValues.resize(rtCount + 1, clearValue);//only one depth stencil attachment will be present
+	clearValues[rtCount].depthStencil = { depthStencilClear.r, static_cast<uint32_t>(depthStencilClear.g) };
+
+	//bind pass descriptor set
+	vkCmdBindDescriptorSets(commandBuffer, VK_PIPELINE_BIND_POINT_GRAPHICS, pipelineLayout, static_cast<int>(UNIFORM_SLOT::PASS), 1, pass.GetPassDescriptorSetPtr(), 0, nullptr);
+
+	VkRenderPassBeginInfo renderPassInfo = {};
+	renderPassInfo.sType = VK_STRUCTURE_TYPE_RENDER_PASS_BEGIN_INFO;
+	renderPassInfo.renderPass = customRenderTarget ? pass.GetRenderPass() : renderPassFallback;
+	renderPassInfo.framebuffer = customRenderTarget ? pass.GetFramebuffer() : frameBufferFallback;
+	renderPassInfo.renderArea.offset = { 0, 0 };
+	renderPassInfo.renderArea.extent = customRenderTarget ? pass.GetExtent() : extentFallback;
+	renderPassInfo.clearValueCount = static_cast<uint32_t>(clearValues.size());
+	renderPassInfo.pClearValues = clearValues.data();
+
+	//render pass begin
+	vkCmdBeginRenderPass(commandBuffer, &renderPassInfo, VK_SUBPASS_CONTENTS_INLINE);
+	vkCmdBindPipeline(commandBuffer, VK_PIPELINE_BIND_POINT_GRAPHICS, pipeline);
+
+	//loop over meshes
+	for (auto mesh : pass.GetMeshVec())
+	{
+		VkBuffer vertexBuffers[] = { mesh->GetVertexBuffer() };
+		VkDeviceSize offsets[] = { 0 };
+		//bind object descriptor set
+		vkCmdBindDescriptorSets(commandBuffer, VK_PIPELINE_BIND_POINT_GRAPHICS, pipelineLayout, static_cast<int>(UNIFORM_SLOT::OBJECT), 1, mesh->GetObjectDescriptorSetPtr(), 0, nullptr);
+
+		//bind vbo
+		vkCmdBindVertexBuffers(commandBuffer, 0, 1, vertexBuffers, offsets);
+		vkCmdBindIndexBuffer(commandBuffer, mesh->GetIndexBuffer(), 0, VK_INDEX_TYPE_UINT32);
+		//draw call
+		vkCmdDrawIndexed(commandBuffer, static_cast<uint32_t>(mesh->GetIndexVec().size()), 1, 0, 0, 0);
+	}
+}
+
+void Renderer::RecordCommandEnd(VkCommandBuffer commandBuffer)
+{
 	//render pass end
 	vkCmdEndRenderPass(commandBuffer);
 }
@@ -1574,11 +1688,6 @@ VkSampleCountFlagBits Renderer::FindMaxUsableSampleCount()
 	return VK_SAMPLE_COUNT_1_BIT;
 }
 
-uint32_t Renderer::GetGraphicsQueueFamilyIndex()
-{
-	return queueFamilyIndices.graphicsFamily.value();
-}
-
 void Renderer::CreateFrameUniformBuffers()
 {
 	frameVec.resize(swapChainImages.size());
@@ -1780,7 +1889,7 @@ Renderer::SwapChainSupportDetails Renderer::QuerySwapChainSupport(VkPhysicalDevi
 // ~ general command buffer function ~
 
 //return imageIndex if function succeed
-uint32_t Renderer::BeginCommandBuffer(const std::vector<VkCommandBuffer>& commandBuffers)
+uint32_t Renderer::WaitForFence()
 {
 	vkWaitForFences(device, 1, &inFlightFences[currentFrame], VK_TRUE, std::numeric_limits<uint64_t>::max());
 
@@ -1795,25 +1904,28 @@ uint32_t Renderer::BeginCommandBuffer(const std::vector<VkCommandBuffer>& comman
 		throw std::runtime_error("failed to acquire swap chain image!");
 	}
 
-	vkResetCommandBuffer(commandBuffers[imageIndex], 0);
+	return imageIndex;
+}
+
+void Renderer::BeginCommandBuffer(VkCommandBuffer commandBuffer)
+{
+	vkResetCommandBuffer(commandBuffer, 0);
 
 	VkCommandBufferBeginInfo beginInfo = {};
 	beginInfo.sType = VK_STRUCTURE_TYPE_COMMAND_BUFFER_BEGIN_INFO;
 	beginInfo.flags = VK_COMMAND_BUFFER_USAGE_SIMULTANEOUS_USE_BIT;
 
 	//command buffer begin
-	if (vkBeginCommandBuffer(commandBuffers[imageIndex], &beginInfo) != VK_SUCCESS)
+	if (vkBeginCommandBuffer(commandBuffer, &beginInfo) != VK_SUCCESS)
 	{
 		throw std::runtime_error("failed to begin recording command buffer!");
 	}
-
-	return imageIndex;
 }
 
-void Renderer::EndCommandBuffer(const std::vector<VkCommandBuffer>& commandBuffers, uint32_t imageIndex)
+void Renderer::EndCommandBuffer(VkCommandBuffer commandBuffer, uint32_t imageIndex)
 {
 	//command buffer end
-	if (vkEndCommandBuffer(commandBuffers[imageIndex]) != VK_SUCCESS)
+	if (vkEndCommandBuffer(commandBuffer) != VK_SUCCESS)
 	{
 		throw std::runtime_error("failed to record command buffer!");
 	}
@@ -1826,7 +1938,7 @@ void Renderer::EndCommandBuffer(const std::vector<VkCommandBuffer>& commandBuffe
 	submitInfo.pWaitSemaphores = waitSemaphores;
 	submitInfo.pWaitDstStageMask = waitStages;
 	submitInfo.commandBufferCount = 1;
-	submitInfo.pCommandBuffers = &commandBuffers[imageIndex];
+	submitInfo.pCommandBuffers = &commandBuffer;
 
 	VkSemaphore signalSemaphores[] = { renderFinishedSemaphores[currentFrame] };
 	submitInfo.signalSemaphoreCount = 1;

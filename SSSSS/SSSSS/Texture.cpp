@@ -320,7 +320,8 @@ void RenderTexture::CreateRenderTextureImage()
 		textureImageMemory);
 	colorImageView = pRenderer->CreateImageView(textureImage, textureFormat, VK_IMAGE_ASPECT_COLOR_BIT, mipLevels);
 	pRenderer->TransitionImageLayout(pRenderer->defaultCommandPool, textureImage, textureFormat, VK_IMAGE_LAYOUT_UNDEFINED, VK_IMAGE_LAYOUT_COLOR_ATTACHMENT_OPTIMAL, 1);
-	
+	currentLayout = VK_IMAGE_LAYOUT_COLOR_ATTACHMENT_OPTIMAL;
+
 	colorAttachment.format = textureFormat;
 	colorAttachment.samples = VK_SAMPLE_COUNT_1_BIT,//no msaa;
 	//if msaa is supported, this is the resolve destination which does not require clear, 
@@ -336,9 +337,10 @@ void RenderTexture::CreateRenderTextureImage()
 
 void RenderTexture::TransitionLayoutToWrite(VkCommandBuffer commandBuffer)
 {
+
 	VkImageMemoryBarrier barrier = {};
 	barrier.sType = VK_STRUCTURE_TYPE_IMAGE_MEMORY_BARRIER;
-	barrier.oldLayout = VK_IMAGE_LAYOUT_SHADER_READ_ONLY_OPTIMAL;
+	barrier.oldLayout = currentLayout;
 	barrier.newLayout = VK_IMAGE_LAYOUT_COLOR_ATTACHMENT_OPTIMAL;
 	barrier.image = textureImage;
 	barrier.srcQueueFamilyIndex = pRenderer->GetGraphicsQueueFamilyIndex();
@@ -360,13 +362,15 @@ void RenderTexture::TransitionLayoutToWrite(VkCommandBuffer commandBuffer)
 		0, nullptr,
 		0, nullptr, 
 		1, &barrier);
+
+	currentLayout = VK_IMAGE_LAYOUT_COLOR_ATTACHMENT_OPTIMAL;
 }
 
 void RenderTexture::TransitionLayoutToRead(VkCommandBuffer commandBuffer)
 {
 	VkImageMemoryBarrier barrier = {};
 	barrier.sType = VK_STRUCTURE_TYPE_IMAGE_MEMORY_BARRIER;
-	barrier.oldLayout = VK_IMAGE_LAYOUT_COLOR_ATTACHMENT_OPTIMAL;
+	barrier.oldLayout = currentLayout;
 	barrier.newLayout = VK_IMAGE_LAYOUT_SHADER_READ_ONLY_OPTIMAL;
 	barrier.image = textureImage;
 	barrier.srcQueueFamilyIndex = pRenderer->GetGraphicsQueueFamilyIndex();
@@ -389,4 +393,6 @@ void RenderTexture::TransitionLayoutToRead(VkCommandBuffer commandBuffer)
 		0, nullptr,
 		0, nullptr,
 		1, &barrier);
+
+	currentLayout = VK_IMAGE_LAYOUT_SHADER_READ_ONLY_OPTIMAL;
 }
