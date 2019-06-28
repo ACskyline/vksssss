@@ -1147,19 +1147,6 @@ void Renderer::CleanUpLevels()
 	}
 }
 
-// ~ glfw resize ~
-
-//handle resize explicitly
-//void Renderer::FramebufferResizeCallback(GLFWwindow* window, int width, int height) 
-//{
-//	//You can safely cast it to the owner object?
-//	//Yes. It works in pairs with glfwSetWindowUserPointer.
-//	//You get what you set.
-//	auto app = reinterpret_cast<Renderer*>(glfwGetWindowUserPointer(window));
-//	app->framebufferResized = true;
-//	app->width = width;
-//	app->height = height;
-//}
 
 // ~ debug layer ~
 
@@ -1539,35 +1526,6 @@ void Renderer::CreateImageViews()
 	}
 }
 
-//handle resize
-//void Renderer::RecreateSwapChain() {
-//	int width = 0, height = 0;
-//
-//	//handle minimization
-//	while (width == 0 || height == 0) {
-//		glfwGetFramebufferSize(window, &width, &height);
-//		glfwWaitEvents();
-//	}
-//
-//	vkDeviceWaitIdle(device);
-//
-//	CleanUpSwapChain();
-//
-//	CreateSwapChain();
-//	CreateImageViews();
-//	CreateRenderPass();
-//	CreateGraphicsPipeline();
-//	CreateColorResources();
-//	CreateDepthResources();
-//	CreateFramebuffers();
-//
-//	CreateFrameUniformBuffers();
-//
-//	CreateDescriptorPool();//descriptor pool is related to swap chain images size
-//	CreateDescriptorSets();//descriptor sets are related to swap chain images size
-//	CreateCommandBuffers();//command buffers are related to swap chain images size
-//}
-
 void Renderer::CreateSyncObjects()
 {
 	imageAvailableSemaphores.resize(framesInFlight);
@@ -1805,7 +1763,8 @@ void Renderer::CreateSwapChainFramebuffers()
 	}
 }
 
-VkSurfaceFormatKHR Renderer::ChooseSwapSurfaceFormat(const std::vector<VkSurfaceFormatKHR>& availableFormats) {
+VkSurfaceFormatKHR Renderer::ChooseSwapSurfaceFormat(const std::vector<VkSurfaceFormatKHR>& availableFormats) 
+{
 	if (availableFormats.size() == 1 && availableFormats[0].format == VK_FORMAT_UNDEFINED) {
 		return { VK_FORMAT_B8G8R8A8_UNORM, VK_COLOR_SPACE_SRGB_NONLINEAR_KHR };
 	}
@@ -1819,7 +1778,8 @@ VkSurfaceFormatKHR Renderer::ChooseSwapSurfaceFormat(const std::vector<VkSurface
 	return availableFormats[0];
 }
 
-VkPresentModeKHR Renderer::ChooseSwapPresentMode(const std::vector<VkPresentModeKHR>& availablePresentModes) {
+VkPresentModeKHR Renderer::ChooseSwapPresentMode(const std::vector<VkPresentModeKHR>& availablePresentModes) 
+{
 	VkPresentModeKHR bestMode = VK_PRESENT_MODE_FIFO_KHR;
 
 	for (const auto& availablePresentMode : availablePresentModes) {
@@ -1834,7 +1794,8 @@ VkPresentModeKHR Renderer::ChooseSwapPresentMode(const std::vector<VkPresentMode
 	return bestMode;
 }
 
-VkExtent2D Renderer::ChooseSwapExtent(const VkSurfaceCapabilitiesKHR& capabilities) {
+VkExtent2D Renderer::ChooseSwapExtent(const VkSurfaceCapabilitiesKHR& capabilities) 
+{
 	//The swap extent is the resolution of the swap chain images and it's almost 
 	//always exactly equal to the resolution of the window that we're drawing to.
 	//The range of the possible resolutions is defined in the VkSurfaceCapabilitiesKHR 
@@ -1862,7 +1823,8 @@ VkExtent2D Renderer::ChooseSwapExtent(const VkSurfaceCapabilitiesKHR& capabiliti
 	}
 }
 
-Renderer::SwapChainSupportDetails Renderer::QuerySwapChainSupport(VkPhysicalDevice device) {
+Renderer::SwapChainSupportDetails Renderer::QuerySwapChainSupport(VkPhysicalDevice device) 
+{
 	SwapChainSupportDetails details;
 
 	vkGetPhysicalDeviceSurfaceCapabilitiesKHR(device, surface, &details.capabilities);
@@ -1961,11 +1923,7 @@ void Renderer::EndCommandBuffer(VkCommandBuffer commandBuffer, uint32_t imageInd
 
 	VkResult result = vkQueuePresentKHR(presentQueue, &presentInfo);
 
-	if (result == VK_ERROR_OUT_OF_DATE_KHR || result == VK_SUBOPTIMAL_KHR || framebufferResized) {
-		framebufferResized = false;
-		//RecreateSwapChain();
-	}
-	else if (result != VK_SUCCESS) {
+	if (result != VK_SUCCESS) {
 		throw std::runtime_error("failed to present swap chain image!");
 	}
 

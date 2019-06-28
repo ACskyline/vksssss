@@ -16,6 +16,7 @@
 
 layout(set = SCENE_SET, binding = UBO_SLOT(SCENE, 0)) uniform SceneUniformBufferObject {
     uint time;
+	uint mode;
 } sceneUBO;
 
 layout(set = FRAME_SET, binding = UBO_SLOT(FRAME, 0)) uniform FrameUniformBufferObject {

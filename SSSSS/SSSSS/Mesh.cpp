@@ -207,10 +207,10 @@ void Mesh::CleanUp()
 void Mesh::InitSquare()
 {
 	vertices = {
-		{{-0.5f, 0.5f, 0.0f}, {0.0f, 0.0f, 1.0f}, {0.0f, 0.0f}},
-		{{-0.5f, -0.5f, 0.0f}, {0.0f, 0.0f, 1.0f}, {0.0f, 1.0f}},
-		{{0.5f, -0.5f, 0.0f}, {0.0f, 0.0f, 1.0f}, {1.0f, 1.0f}},
-		{{0.5f, 0.5f, 0.0f}, {0.0f, 0.0f, 1.0f}, {1.0f, 0.0f}} 
+		{{-0.5f, 0.5f, 0.0f}, {0.0f, 0.0f, 1.0f}, {1.0f, 0.0f, 0.0f, -1.0f}, {0.0f, 0.0f}},
+		{{-0.5f, -0.5f, 0.0f}, {0.0f, 0.0f, 1.0f}, {1.0f, 0.0f, 0.0f, -1.0f}, {0.0f, 1.0f}},
+		{{0.5f, -0.5f, 0.0f}, {0.0f, 0.0f, 1.0f}, {1.0f, 0.0f, 0.0f, -1.0f}, {1.0f, 1.0f}},
+		{{0.5f, 0.5f, 0.0f}, {0.0f, 0.0f, 1.0f},  {1.0f, 0.0f, 0.0f, -1.0f}, {1.0f, 0.0f}}
 	};
 
 	indices = {
@@ -222,10 +222,10 @@ void Mesh::InitSquare()
 void Mesh::InitFullScreenQuad()
 {
 	vertices = {
-		{{-1.0f, -1.0f, 0.0f}, {0.0f, 0.0f, -1.0f}, {0.0f, 0.0f}},
-		{{-1.0f, 1.0f, 0.0f}, {0.0f, 0.0f, -1.0f}, {0.0f, 1.0f}},
-		{{1.0f, 1.0f, 0.0f}, {0.0f, 0.0f, -1.0f}, {1.0f, 1.0f}},
-		{{1.0f, -1.0f, 0.0f}, {0.0f, 0.0f, -1.0f}, {1.0f, 0.0f}}
+		{{-1.0f, -1.0f, 0.0f}, {0.0f, 0.0f, -1.0f}, {1.0f, 0.0f, 0.0f, -1.0f}, {0.0f, 0.0f}},
+		{{-1.0f, 1.0f, 0.0f}, {0.0f, 0.0f, -1.0f}, {1.0f, 0.0f, 0.0f, -1.0f}, {0.0f, 1.0f}},
+		{{1.0f, 1.0f, 0.0f}, {0.0f, 0.0f, -1.0f}, {1.0f, 0.0f, 0.0f, -1.0f}, {1.0f, 1.0f}},
+		{{1.0f, -1.0f, 0.0f}, {0.0f, 0.0f, -1.0f}, {1.0f, 0.0f, 0.0f, -1.0f}, {1.0f, 0.0f}}
 	};
 
 	indices = {
@@ -445,17 +445,57 @@ void Mesh::AssembleObjMesh(
 	vertices.resize(n);
 	indices.resize(n);
 
-	for (uint32_t i = 0; i < n; i++)
+	for (uint32_t i = 0; i < n; i += 3)
 	{
-		glm::vec3 pos(0, 0, 0);
-		glm::vec3 nor(0, 0, 0);
-		glm::vec2 uv(0, 0);
+		glm::vec3 p0 = vecPos[vecPoint[i].VI - 1];
+		glm::vec3 p1 = vecPos[vecPoint[i + 1].VI - 1];
+		glm::vec3 p2 = vecPos[vecPoint[i + 2].VI - 1];
 
-		if (vecPoint[i].VI > 0) pos = vecPos[vecPoint[i].VI - 1];//index start at 1 in an .obj file but at 0 in an array, 0 was used to mark not-have-pos
-		if (vecPoint[i].NI > 0) nor = vecNor[vecPoint[i].NI - 1];//index start at 1 in an .obj file but at 0 in an array, 0 was used to mark not-have-nor
-		if (vecPoint[i].TI > 0) uv = vecUV[vecPoint[i].TI - 1];//index start at 1 in an .obj file but at 0 in an array, 0 was used to mark not-have-uv
+		glm::vec2 w0 = vecUV[vecPoint[i].TI - 1];
+		glm::vec2 w1 = vecUV[vecPoint[i + 1].TI - 1];
+		glm::vec2 w2 = vecUV[vecPoint[i + 2].TI - 1];
 
-		vertices[i] = { pos, nor, uv };
-		indices[i] = i;//this way, all 3 vertices on every triangle are unique, even though they belong to the same polygon, which increase storing space but allow for finer control
+		float x1 = p1.x - p0.x;
+		float x2 = p2.x - p0.x;
+		float y1 = p1.y - p0.y;
+		float y2 = p2.y - p0.y;
+		float z1 = p1.z - p0.z;
+		float z2 = p2.z - p0.z;
+
+		float s1 = w1.s - w0.s;
+		float s2 = w2.s - w0.s;
+		float t1 = w1.t - w0.t;
+		float t2 = w2.t - w0.t;
+
+		float r = 1.0f / (s1 * t2 - s2 * t1);
+		glm::vec3 sdir(
+			(t2 * x1 - t1 * x2) * r, 
+			(t2 * y1 - t1 * y2) * r,
+			(t2 * z1 - t1 * z2) * r);
+		glm::vec3 tdir(
+			(s1 * x2 - s2 * x1) * r, 
+			(s1 * y2 - s2 * y1) * r,
+			(s1 * z2 - s2 * z1) * r);
+
+		sdir = glm::normalize(sdir);
+		tdir = glm::normalize(tdir);
+
+		for (uint32_t j = i; j < i + 3; j++)
+		{
+			glm::vec3 pos(0, 0, 0);
+			glm::vec3 nor(0, 0, 0);
+			glm::vec2 uv(0, 0);
+
+			if (vecPoint[j].VI > 0) pos = vecPos[vecPoint[j].VI - 1];//index start at 1 in an .obj file but at 0 in an array, 0 was used to mark not-have-pos
+			if (vecPoint[j].NI > 0) nor = vecNor[vecPoint[j].NI - 1];//index start at 1 in an .obj file but at 0 in an array, 0 was used to mark not-have-nor
+			if (vecPoint[j].TI > 0) uv = vecUV[vecPoint[j].TI - 1];//index start at 1 in an .obj file but at 0 in an array, 0 was used to mark not-have-uv
+
+			//The order is fixed, it is the same in the shaders. The only way to tell the direction when reconstructing tangent is the sign component.
+			float sign = glm::dot(glm::cross(nor, sdir), tdir) > 0.0f ? 1.0f : -1.0f;
+			glm::vec4 tan(sdir, sign);
+
+			vertices[j] = { pos, nor, tan, uv };
+			indices[j] = j;//this way, all 3 vertices on every triangle are unique, even though they belong to the same polygon, which increase storing space but allow for finer control
+		}
 	}
 }

@@ -61,6 +61,8 @@ public:
 
 	void CleanUp();
 
+	void UpdatePassUniformBuffer(Camera* _pCamera);
+
 private:
 	Renderer* pRenderer;
 	Scene* pScene;

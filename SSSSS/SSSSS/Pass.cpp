@@ -10,10 +10,6 @@ Pass::Pass(const std::string& _name) :
 {
 	for (auto& pShader : pShaderArr)
 		pShader = nullptr;
-
-	pUBO.passNum = 0;
-	pUBO.proj = glm::mat4(1);
-	pUBO.view = glm::mat4(1);
 }
 
 Pass::~Pass()
@@ -339,4 +335,16 @@ void Pass::CleanUp()
 		vkFreeMemory(pRenderer->GetDevice(), passUniformBufferMemory, nullptr);
 		pRenderer = nullptr;
 	}
+}
+
+void Pass::UpdatePassUniformBuffer(Camera* _pCamera)
+{
+	pUBO.view = _pCamera->GetViewMatrix();
+	pUBO.proj = _pCamera->GetProjectionMatrix();
+	pUBO.passNum = 100;
+
+	void* data;
+	vkMapMemory(pRenderer->GetDevice(), passUniformBufferMemory, 0, sizeof(pUBO), 0, &data);
+	memcpy(data, &pUBO, sizeof(pUBO));
+	vkUnmapMemory(pRenderer->GetDevice(), passUniformBufferMemory);
 }

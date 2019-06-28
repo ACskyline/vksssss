@@ -7,7 +7,6 @@
 Scene::Scene(const std::string& _name) : 
 	pRenderer(nullptr), name(_name)
 {
-	sUBO.time = 0;
 }
 
 Scene::~Scene()

@@ -147,6 +147,8 @@
     <None Include="deferred.frag" />
     <None Include="deferred.vert" />
     <None Include="GlobalInclude.glsl" />
+    <None Include="GlobalIncludeFrag.glsl" />
+    <None Include="GlobalIncludeVert.glsl" />
     <None Include="standard.frag" />
     <None Include="standard.vert" />
   </ItemGroup>

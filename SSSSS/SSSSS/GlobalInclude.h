@@ -18,30 +18,32 @@ enum class UNIFORM_SLOT { SCENE, FRAME, PASS, OBJECT, COUNT };
 
 //stored in scene
 struct SceneUniformBufferObject {
-	uint16_t time;
+	uint32_t time = 0;
+	uint32_t mode = 0;
 };
 
 //stored in pass
 struct PassUniformBufferObject {
-	glm::mat4 view;
-	glm::mat4 proj;
-	uint16_t passNum;
+	glm::mat4 view = glm::mat4(1);
+	glm::mat4 proj = glm::mat4(1);
+	uint32_t passNum = 0;
 };
 
 //stored in mesh
 struct ObjectUniformBufferObject {
-	glm::mat4 model;
-	glm::mat4 modelInvTrans;
+	glm::mat4 model = glm::mat4(1);
+	glm::mat4 modelInvTrans = glm::mat4(1);
 };
 
 //stored in renderer (because related to swap chain)
 struct FrameUniformBufferObject {
-	uint16_t frameNum;
+	uint32_t frameNum = 0;
 };
 
 struct Vertex {
 	glm::vec3 pos;
 	glm::vec3 normal;
+	glm::vec4 tangent;
 	glm::vec2 texCoord;
 
 	static VkVertexInputBindingDescription getBindingDescription() {
@@ -53,8 +55,8 @@ struct Vertex {
 		return bindingDescription;
 	}
 
-	static std::array<VkVertexInputAttributeDescription, 3> getAttributeDescriptions() {
-		std::array<VkVertexInputAttributeDescription, 3> attributeDescriptions = {};
+	static std::array<VkVertexInputAttributeDescription,4> getAttributeDescriptions() {
+		std::array<VkVertexInputAttributeDescription, 4> attributeDescriptions = {};
 
 		attributeDescriptions[0].binding = 0;
 		attributeDescriptions[0].location = 0;
@@ -68,8 +70,13 @@ struct Vertex {
 
 		attributeDescriptions[2].binding = 0;
 		attributeDescriptions[2].location = 2;
-		attributeDescriptions[2].format = VK_FORMAT_R32G32_SFLOAT;
-		attributeDescriptions[2].offset = offsetof(Vertex, texCoord);
+		attributeDescriptions[2].format = VK_FORMAT_R32G32B32A32_SFLOAT;
+		attributeDescriptions[2].offset = offsetof(Vertex, tangent);
+
+		attributeDescriptions[3].binding = 0;
+		attributeDescriptions[3].location = 3;
+		attributeDescriptions[3].format = VK_FORMAT_R32G32_SFLOAT;
+		attributeDescriptions[3].offset = offsetof(Vertex, texCoord);
 
 		return attributeDescriptions;
 	}

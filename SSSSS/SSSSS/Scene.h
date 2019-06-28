@@ -27,6 +27,12 @@ public:
 
 	void CleanUp();
 
+	//vulkan functions
+	void UpdateSceneUniformBuffer();
+
+	//scene uniform
+	SceneUniformBufferObject sUBO;
+
 private:
 	Renderer* pRenderer;
 	std::string name;
@@ -37,13 +43,11 @@ private:
 	std::vector<Texture*> pTextureVec;
 
 	//scene uniform
-	SceneUniformBufferObject sUBO;
 	VkBuffer sceneUniformBuffer;
 	VkDeviceMemory sceneUniformBufferMemory;
 	VkDescriptorSet sceneDescriptorSet;
 	VkDescriptorSetLayout sceneDescriptorSetLayout;
 
 	//vulkan functions
-	void UpdateSceneUniformBuffer();
 	void CreateSceneUniformBuffer();
 };

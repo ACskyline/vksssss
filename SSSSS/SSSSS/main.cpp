@@ -14,6 +14,7 @@
 
 #include <iterator>
 
+const float EPSILON = 0.001f;
 const int WIDTH = 800;
 const int HEIGHT = 600;
 const int WIDTH_RT = 800;
@@ -29,9 +30,10 @@ Shader mVertShader(Shader::ShaderType::VertexShader, "standard.vert");
 Shader mFragShader(Shader::ShaderType::FragmentShader, "standard.frag");
 Shader mDeferredVertShader(Shader::ShaderType::VertexShader, "deferred.vert");
 Shader mDeferredFragShader(Shader::ShaderType::FragmentShader, "deferred.frag");
-Camera mCameraOffscreen("offscreen camera", glm::vec3(2, 3, 2), glm::vec3(0, 1, 0), glm::vec3(0, 1, 0), 45.f, WIDTH_RT, HEIGHT_RT, 0.1f, 10.f);
+OrbitCamera mCameraOffscreen("offscreen camera", 3, 45.f, 45.f, glm::vec3(0, 0, 0), glm::vec3(0, 1, 0), 45.f, WIDTH_RT, HEIGHT_RT, 0.1f, 10.f);
 Camera mCamera("default camera", glm::vec3(0, 0, 2), glm::vec3(0, 0, 0), glm::vec3(0, 1, 0), 45.f, WIDTH, HEIGHT, 0.1f, 10.f);
-Mesh mMeshHead("box.obj", Mesh::MeshType::File, glm::vec3(0, 0, 0), glm::vec3(0, 0, 0), glm::vec3(1, 1, 1));
+OrbitCamera* pCurrentOrbitCamera = &mCameraOffscreen;
+Mesh mMeshHead("smooth_head.obj", Mesh::MeshType::File, glm::vec3(0, 0, 0), glm::vec3(0, 0, 0), glm::vec3(1, 1, 1));
 Mesh mMeshFullScreenQuad("quad", Mesh::MeshType::FullScreenQuad, glm::vec3(0, 0, 0), glm::vec3(0, 0, 0), glm::vec3(1, 1, 1));
 //Mesh mMeshSquare("square", Mesh::MeshType::Square, glm::vec3(0, 0, 0), glm::vec3(0, 0, 0), glm::vec3(2, 2, 1));
 Texture mTextureColor("head_color.jpg", VK_FORMAT_R8G8B8A8_UNORM);
@@ -43,6 +45,11 @@ VkDescriptorPool ImGuiDescriptorPool;
 bool show_demo_window = true;
 bool show_another_window = false;
 ImVec4 clear_color = ImVec4(0.45f, 0.55f, 0.60f, 1.00f);
+
+//io stuff
+bool MOUSE_LEFT_BUTTON_DOWN = false;
+bool MOUSE_RIGHT_BUTTON_DOWN = false;
+bool MOUSE_MIDDLE_BUTTON_DOWN = false;
 
 void CreatePasses()
 {
@@ -87,6 +94,120 @@ void CreateLevels()
 	mLevel.AddTexture(&mRenderTexture);
 }
 
+void MouseButton(GLFWwindow* window, int button, int action, int mods)
+{
+	//this function is not used
+	//printf("button:%d,action:%d,mods:%d\n", button, action, mods);
+	switch (button)
+	{
+	case GLFW_MOUSE_BUTTON_LEFT:
+		MOUSE_LEFT_BUTTON_DOWN = static_cast<bool>(action);
+		break;
+	case GLFW_MOUSE_BUTTON_RIGHT:
+		MOUSE_RIGHT_BUTTON_DOWN = static_cast<bool>(action);
+		break;
+	case GLFW_MOUSE_BUTTON_MIDDLE:
+		MOUSE_MIDDLE_BUTTON_DOWN = static_cast<bool>(action);
+		break;
+	default:
+		break;
+	}
+}
+
+void MouseMotion(GLFWwindow* window, double x, double y)
+{
+	const float horizontalFactor = -0.1f;
+	const float verticalFactor = 0.1f;
+	const float horizontalPanFactor = -0.001f;
+	const float verticalPanFactor = 0.001f;
+	float static xOld = static_cast<float>(x);
+	float static yOld = static_cast<float>(y);
+	float xDelta = static_cast<float>(x) - xOld;
+	float yDelta = static_cast<float>(y) - yOld;
+	bool updateCamera = false;
+	int keyC = glfwGetKey(window, GLFW_KEY_C);
+	if (MOUSE_LEFT_BUTTON_DOWN && keyC == GLFW_PRESS)
+	{
+		if (glm::abs(xDelta) > EPSILON)
+		{
+			pCurrentOrbitCamera->horizontalAngle += xDelta * horizontalFactor;
+			updateCamera = true;
+		}
+		if (glm::abs(yDelta) > EPSILON)
+		{
+			pCurrentOrbitCamera->verticalAngle += yDelta * verticalFactor;
+			if (pCurrentOrbitCamera->verticalAngle > 90 - EPSILON) pCurrentOrbitCamera->verticalAngle = 89 - EPSILON;
+			if (pCurrentOrbitCamera->verticalAngle < -90 + EPSILON) pCurrentOrbitCamera->verticalAngle = -89 + EPSILON;
+			updateCamera = true;
+		}
+	}
+
+	if (MOUSE_MIDDLE_BUTTON_DOWN && keyC == GLFW_PRESS)
+	{
+		if (glm::abs(xDelta) > EPSILON || glm::abs(yDelta) > EPSILON)
+		{
+			glm::vec3 forward = glm::normalize(pCurrentOrbitCamera->target - pCurrentOrbitCamera->position);
+			glm::vec3 up = pCurrentOrbitCamera->up;
+			glm::vec3 right = glm::cross(forward, up);
+			up = glm::cross(right, forward);
+
+			if (glm::abs(xDelta) > EPSILON)
+			{
+				pCurrentOrbitCamera->target += horizontalPanFactor * xDelta * right;
+			}
+
+			if (glm::abs(yDelta) > EPSILON)
+			{
+				pCurrentOrbitCamera->target += verticalPanFactor * yDelta * up;
+			}
+			updateCamera = true;
+		}
+	}
+
+	if (updateCamera)
+	{
+		pCurrentOrbitCamera->UpdatePosition();
+		mPassOffscreen.UpdatePassUniformBuffer(&mCameraOffscreen);
+	}
+
+	xOld = static_cast<float>(x);
+	yOld = static_cast<float>(y);
+}
+
+void MouseScroll(GLFWwindow* window, double x, double y)
+{
+	const float zFactor = 0.1f;
+	const float& direction = static_cast<float>(y);
+
+	bool updateCamera = false;
+	int keyC = glfwGetKey(window, GLFW_KEY_C);
+	if (keyC == GLFW_PRESS)
+	{
+		if (glm::abs(direction - EPSILON) > 0)
+		{
+			pCurrentOrbitCamera->distance -= direction * zFactor;
+			if (pCurrentOrbitCamera->distance < 0 + EPSILON) pCurrentOrbitCamera->distance = 0.1f + EPSILON;
+			updateCamera = true;
+		}
+	}
+
+	if (updateCamera)
+	{
+		pCurrentOrbitCamera->UpdatePosition();
+		mPassOffscreen.UpdatePassUniformBuffer(&mCameraOffscreen);
+	}
+}
+
+void ResizeCallback(GLFWwindow* window, int width, int height) 
+{
+	while (width == 0 || height == 0) {
+		glfwGetFramebufferSize(window, &width, &height);
+		glfwWaitEvents();
+	}
+	if (width != mRenderer.width || height != mRenderer.height)
+		throw std::runtime_error("window size does not match original!");
+}
+
 void CreateWindow() 
 {
 	glfwInit();
@@ -97,9 +218,13 @@ void CreateWindow()
 	glfwWindowHint(GLFW_RESIZABLE, GLFW_FALSE);
 
 	mRenderer.window = glfwCreateWindow(WIDTH, HEIGHT, "Yes, Vulkan!", nullptr, nullptr);
+
 	//handle resize explicitly        
-	//glfwSetWindowUserPointer(window, &mRenderer);
-	//glfwSetFramebufferSizeCallback(window, FramebufferResizeCallback);
+	glfwSetFramebufferSizeCallback(mRenderer.window, ResizeCallback);
+
+	glfwSetMouseButtonCallback(mRenderer.window, MouseButton);
+	glfwSetCursorPosCallback(mRenderer.window, MouseMotion);
+	glfwSetScrollCallback(mRenderer.window, MouseScroll);
 }
 
 void InitRenderer()
@@ -217,47 +342,32 @@ void InitImGui()
 
 void DrawImGui(VkCommandBuffer commandBuffer)
 {
+	static int mode = 0;
+	static int counter = 0;
+	bool updateScene = false;
+
 	// Start the Dear ImGui frame
 	ImGui_ImplVulkan_NewFrame();
 	ImGui_ImplGlfw_NewFrame();
 	ImGui::NewFrame();
 
-	// 1. Show the big demo window (Most of the sample code is in ImGui::ShowDemoWindow()! You can browse its code to learn more about Dear ImGui!).
-	if (show_demo_window)
-		ImGui::ShowDemoWindow(&show_demo_window);
 
-	// 2. Show a simple window that we create ourselves. We use a Begin/End pair to created a named window.
+	ImGui::Begin("SSSSS");
+
+	ImGui::Text("This is some useful text.");
+
+	ImGui::SliderInt("mode", &mode, 0, 4);
+	if (mode != mScene.sUBO.mode)
 	{
-		static float f = 0.0f;
-		static int counter = 0;
-
-		ImGui::Begin("Hello, world!");                          // Create a window called "Hello, world!" and append into it.
-
-		ImGui::Text("This is some useful text.");               // Display some text (you can use a format strings too)
-		ImGui::Checkbox("Demo Window", &show_demo_window);      // Edit bools storing our window open/close state
-		ImGui::Checkbox("Another Window", &show_another_window);
-
-		ImGui::SliderFloat("float", &f, 0.0f, 1.0f);            // Edit 1 float using a slider from 0.0f to 1.0f    
-		ImGui::ColorEdit3("clear color", (float*)&clear_color); // Edit 3 floats representing a color
-
-		if (ImGui::Button("Button"))                            // Buttons return true when clicked (most widgets return true when edited/activated)
-			counter++;
-		ImGui::SameLine();
-		ImGui::Text("counter = %d", counter);
-
-		ImGui::Text("Application average %.3f ms/frame (%.1f FPS)", 1000.0f / ImGui::GetIO().Framerate, ImGui::GetIO().Framerate);
-		ImGui::End();
+		mScene.sUBO.mode = mode;
+		updateScene = true;
 	}
 
-	// 3. Show another simple window.
-	if (show_another_window)
-	{
-		ImGui::Begin("Another Window", &show_another_window);   // Pass a pointer to our bool variable (the window will have a closing button that will clear the bool when clicked)
-		ImGui::Text("Hello from another window!");
-		if (ImGui::Button("Close Me"))
-			show_another_window = false;
-		ImGui::End();
-	}
+	ImGui::Text("Application average %.3f ms/frame (%.1f FPS)", 1000.0f / ImGui::GetIO().Framerate, ImGui::GetIO().Framerate);
+	ImGui::End();
+
+	if (updateScene)
+		mScene.UpdateSceneUniformBuffer();
 
 	// Rendering
 	ImGui::Render();

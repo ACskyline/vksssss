@@ -201,6 +201,11 @@ public:
 
 	GLFWwindow* window;
 
+	// ~ member variables ~
+
+	int width;
+	int height;
+
 	// ~ default pool and command buffers ~
 
 	VkDescriptorPool defaultDescriptorPool;
@@ -266,8 +271,6 @@ private:
 	// ~ member variables ~
 
 	std::vector<Level*> pLevelVec;
-	int width;
-	int height;
 	int framesInFlight;
 
 	// ~ app ~
@@ -317,15 +320,10 @@ private:
 	std::vector<VkSemaphore> renderFinishedSemaphores;
 	std::vector<VkFence> inFlightFences;
 	size_t currentFrame = 0;
-	bool framebufferResized = false;
 
 	// ~ clean up ~
 
 	void CleanUpLevels();
-
-	// ~ glfw resize ~
-
-	//static void FramebufferResizeCallback(GLFWwindow* window, int width, int height);//handle resize explicitly
 
 	// ~ debug layer ~
 
@@ -351,7 +349,6 @@ private:
 	void CreateSwapChain();
 	void CleanUpSwapChain();//clean up all gpu resources related to swap chain
 	void CreateImageViews();
-	//void RecreateSwapChain();//handle resize
 	void CreateSyncObjects();
 	void CreateColorResources();//msaa
 	void CreateDepthResources();
