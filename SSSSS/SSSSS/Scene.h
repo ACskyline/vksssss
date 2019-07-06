@@ -5,6 +5,7 @@
 class Renderer;
 class Pass;
 class Texture;
+class Light;
 
 class Scene
 {
@@ -21,7 +22,7 @@ public:
 	VkDescriptorSetLayout GetSceneDescriptorSetLayout() const;
 
 	void AddPass(Pass* pPass);
-	void AddTexture(Texture* pTexture);
+	void AddLight(Light* pLight);
 
 	void InitScene(Renderer* _pRenderer, VkDescriptorPool descriptorPool);
 
@@ -40,7 +41,8 @@ private:
 
 	//asset containers
 	std::vector<Pass*> pPassVec;
-	std::vector<Texture*> pTextureVec;
+	std::vector<Texture*> pTextureVec;//this is a texture array (currently for lights only) instead of multiple textures in the shader
+	std::vector<Light*> pLightVec;
 
 	//scene uniform
 	VkBuffer sceneUniformBuffer;

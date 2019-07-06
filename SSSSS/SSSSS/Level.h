@@ -9,6 +9,7 @@ class Mesh;
 class Texture;
 class Shader;
 class Camera;
+class Light;
 
 class Level
 {
@@ -22,13 +23,12 @@ public:
 	void AddTexture(Texture* pTexture);
 	void AddShader(Shader* pShader);
 	void AddCamera(Camera* pCamera);
+	void AddLight(Light* pLight);
 
 	std::vector<Pass*>& GetPassVec();
 	std::vector<Scene*>& GetSceneVec();
 	std::vector<Mesh*>& GetMeshVec();
 	std::vector<Texture*>& GetTextureVec();
-	std::vector<Shader*>& GetShaderVec();
-	std::vector<Camera*>& GetCameraVec();
 
 	void InitLevel(
 		Renderer* pRenderer, 
@@ -45,4 +45,5 @@ private:
 	std::vector<Texture*> pTextureVec;
 	std::vector<Shader*> pShaderVec;
 	std::vector<Camera*> pCameraVec;
+	std::vector<Light*> pLightVec;
 };

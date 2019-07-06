@@ -30,10 +30,10 @@ void Frame::InitFrame(Renderer* _pRenderer, VkDescriptorPool descriptorPool)
 	CreateFrameUniformBuffer();
 	pRenderer->CreateDescriptorSetLayout(
 		frameDescriptorSetLayout,
-		fUboCount,//only 1 fUBO
 		0,
-		static_cast<uint32_t>(pTextureVec.size()),
-		fUboCount);//only 1 fUBO, so offset is 1
+		fUboCount,//only 1 fUBO
+		fUboCount,//only 1 fUBO, so offset is 1
+		static_cast<uint32_t>(pTextureVec.size()));
 	pRenderer->CreateDescriptorSet(
 		frameDescriptorSet,
 		descriptorPool,

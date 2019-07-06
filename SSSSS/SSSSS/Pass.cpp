@@ -5,8 +5,8 @@
 #include "Mesh.h"
 #include "Renderer.h"
 
-Pass::Pass(const std::string& _name) :
-	pRenderer(nullptr), pScene(nullptr), pCamera(nullptr), name(_name)
+Pass::Pass(const std::string& _name, bool _clear) :
+	pRenderer(nullptr), pScene(nullptr), pCamera(nullptr), name(_name), clear(_clear)
 {
 	for (auto& pShader : pShaderArr)
 		pShader = nullptr;
@@ -45,6 +45,11 @@ void Pass::SetScene(Scene* _pScene)
 void Pass::AddShader(Shader* pShader)
 {
 	pShaderArr[static_cast<int>(pShader->GetShaderType())] = pShader;
+}
+
+bool Pass::GetClear() const
+{
+	return clear;
 }
 
 int Pass::GetRenderTextureCount() const
@@ -189,10 +194,10 @@ void Pass::InitPass(
 	CreatePassUniformBuffer();
 	pRenderer->CreateDescriptorSetLayout(
 		passDescriptorSetLayout,
-		pUboCount,//only 1 pUBO
 		0,
-		static_cast<uint32_t>(pTextureVec.size()),
-		pUboCount);//only 1 pUBO, so offset is 1
+		pUboCount,//only 1 pUBO
+		pUboCount,//only 1 pUBO, so offset is 1
+		static_cast<uint32_t>(pTextureVec.size()));
 	pRenderer->CreateDescriptorSet(
 		passDescriptorSet,
 		descriptorPool,
@@ -223,18 +228,18 @@ void Pass::InitPass(
 			if (widthMax < pRenderTextureVec[i]->GetWidth()) widthMax = pRenderTextureVec[i]->GetWidth();
 			if (heightMax < pRenderTextureVec[i]->GetHeight()) heightMax = pRenderTextureVec[i]->GetHeight();
 
-			colorAttachments[i] = pRenderTextureVec[i]->GetColorAttachment();
+			colorAttachments[i] = pRenderTextureVec[i]->GetColorAttachment(clear);
 			colorViews[i] = pRenderTextureVec[i]->GetColorImageView();
 
 			if (pRenderTextureVec[i]->SupportDepth())
 			{
-				depthAttachments.push_back(pRenderTextureVec[i]->GetDepthAttachment());
+				depthAttachments.push_back(pRenderTextureVec[i]->GetDepthAttachment(clear));
 				depthViews.push_back(pRenderTextureVec[i]->GetDepthImageView());
 			}
 
 			if (pRenderTextureVec[i]->SupportMsaa())
 			{
-				preResolveAttachments.push_back(pRenderTextureVec[i]->GetPreResolveAttachment());
+				preResolveAttachments.push_back(pRenderTextureVec[i]->GetPreResolveAttachment(clear));
 				preResolveViews.push_back(pRenderTextureVec[i]->GetPreResolveImageView());
 			}
 		}
@@ -250,58 +255,59 @@ void Pass::InitPass(
 	}
 }
 
-void Pass::RecreateFramebuffer()
-{
-	//release the last one
-	vkDestroyFramebuffer(pRenderer->GetDevice(), framebuffer, nullptr);
-
-	if (pRenderTextureVec.size() > 0)
-	{
-		//create a new one
-		std::vector<VkAttachmentDescription> colorAttachments(pRenderTextureVec.size());
-		std::vector<VkAttachmentDescription> depthAttachments;
-		std::vector<VkAttachmentDescription> preResolveAttachments;
-		std::vector<VkImageView> colorViews(pRenderTextureVec.size());
-		std::vector<VkImageView> depthViews;
-		std::vector<VkImageView> preResolveViews;
-		int widthMax = 0;
-		int heightMax = 0;
-		for (int i = 0; i < pRenderTextureVec.size(); i++)
-		{
-			if (widthMax < pRenderTextureVec[i]->GetWidth()) widthMax = pRenderTextureVec[i]->GetWidth();
-			if (heightMax < pRenderTextureVec[i]->GetHeight()) heightMax = pRenderTextureVec[i]->GetHeight();
-
-			colorAttachments[i] = pRenderTextureVec[i]->GetColorAttachment();
-			colorViews[i] = pRenderTextureVec[i]->GetColorImageView();
-
-			if (pRenderTextureVec[i]->SupportDepth())
-			{
-				depthAttachments.push_back(pRenderTextureVec[i]->GetDepthAttachment());
-				depthViews.push_back(pRenderTextureVec[i]->GetDepthImageView());
-			}
-
-			if (pRenderTextureVec[i]->SupportMsaa())
-			{
-				preResolveAttachments.push_back(pRenderTextureVec[i]->GetPreResolveAttachment());
-				preResolveViews.push_back(pRenderTextureVec[i]->GetPreResolveImageView());
-			}
-		}
-		extent.height = heightMax;
-		extent.width = widthMax;
-		pRenderer->CreateRenderPass(renderPass, preResolveAttachments, depthAttachments, colorAttachments);
-		pRenderer->CreateFramebuffer(framebuffer, preResolveViews, depthViews, colorViews, renderPass, widthMax, heightMax);
-	}
-}
-
-void Pass::ChangeRenderTexture(uint32_t slot, RenderTexture* pRenderTexture)
-{
-	pRenderTextureVec[slot] = pRenderTexture;
-}
+//void Pass::RecreateFramebuffer()
+//{
+//	//release the last one
+//	vkDestroyFramebuffer(pRenderer->GetDevice(), framebuffer, nullptr);
+//
+//	if (pRenderTextureVec.size() > 0)
+//	{
+//		//create a new one
+//		std::vector<VkAttachmentDescription> colorAttachments(pRenderTextureVec.size());
+//		std::vector<VkAttachmentDescription> depthAttachments;
+//		std::vector<VkAttachmentDescription> preResolveAttachments;
+//		std::vector<VkImageView> colorViews(pRenderTextureVec.size());
+//		std::vector<VkImageView> depthViews;
+//		std::vector<VkImageView> preResolveViews;
+//		int widthMax = 0;
+//		int heightMax = 0;
+//		for (int i = 0; i < pRenderTextureVec.size(); i++)
+//		{
+//			if (widthMax < pRenderTextureVec[i]->GetWidth()) widthMax = pRenderTextureVec[i]->GetWidth();
+//			if (heightMax < pRenderTextureVec[i]->GetHeight()) heightMax = pRenderTextureVec[i]->GetHeight();
+//
+//			colorAttachments[i] = pRenderTextureVec[i]->GetColorAttachment();
+//			colorViews[i] = pRenderTextureVec[i]->GetColorImageView();
+//
+//			if (pRenderTextureVec[i]->SupportDepth())
+//			{
+//				depthAttachments.push_back(pRenderTextureVec[i]->GetDepthAttachment());
+//				depthViews.push_back(pRenderTextureVec[i]->GetDepthImageView());
+//			}
+//
+//			if (pRenderTextureVec[i]->SupportMsaa())
+//			{
+//				preResolveAttachments.push_back(pRenderTextureVec[i]->GetPreResolveAttachment());
+//				preResolveViews.push_back(pRenderTextureVec[i]->GetPreResolveImageView());
+//			}
+//		}
+//		extent.height = heightMax;
+//		extent.width = widthMax;
+//		pRenderer->CreateRenderPass(renderPass, preResolveAttachments, depthAttachments, colorAttachments);
+//		pRenderer->CreateFramebuffer(framebuffer, preResolveViews, depthViews, colorViews, renderPass, widthMax, heightMax);
+//	}
+//}
+//
+//void Pass::ChangeRenderTexture(uint32_t slot, RenderTexture* pRenderTexture)
+//{
+//	pRenderTextureVec[slot] = pRenderTexture;
+//}
 
 void Pass::UpdatePassUniformBuffer()
 {
 	pUBO.view = pCamera->GetViewMatrix();
 	pUBO.proj = pCamera->GetProjectionMatrix();
+	pUBO.cameraPosition = glm::vec4(pCamera->position, 1.0);
 	pUBO.passNum = 100;
 
 	void* data;
@@ -341,6 +347,7 @@ void Pass::UpdatePassUniformBuffer(Camera* _pCamera)
 {
 	pUBO.view = _pCamera->GetViewMatrix();
 	pUBO.proj = _pCamera->GetProjectionMatrix();
+	pUBO.cameraPosition = glm::vec4(_pCamera->position, 1.0);
 	pUBO.passNum = 100;
 
 	void* data;

@@ -56,9 +56,9 @@ public:
 	void virtual CleanUp();
 
 	VkSampleCountFlagBits GetMsaaSamples() const;
-	VkAttachmentDescription GetColorAttachment() const;
-	VkAttachmentDescription GetDepthAttachment() const;
-	VkAttachmentDescription GetPreResolveAttachment() const;
+	VkAttachmentDescription GetColorAttachment(bool clear) const;
+	VkAttachmentDescription GetDepthAttachment(bool clear) const;
+	VkAttachmentDescription GetPreResolveAttachment(bool clear) const;
 	VkImageView GetColorImageView() const;
 	VkImageView GetDepthImageView() const;
 	VkImageView GetPreResolveImageView() const;
@@ -75,7 +75,6 @@ private:
 	//VkImage colorImage; //use textureImage instead
 	//VkDeviceMemory colorImageMemory; //use textureImageMemory instead
 	VkImageView colorImageView;
-	VkAttachmentDescription colorAttachment;
 	VkImageLayout currentLayout;
 
 	// ~ depth buffer ~
@@ -85,7 +84,6 @@ private:
 	VkDeviceMemory depthImageMemory;
 	VkImageView depthImageView; 
 	VkFormat depthFormat;
-	VkAttachmentDescription depthAttachment;
 
 	// ~ resolve buffer ~
 
@@ -94,7 +92,6 @@ private:
 	VkImage preResolveImage;
 	VkDeviceMemory preResolveImageMemory;
 	VkImageView preResolveImageView;
-	VkAttachmentDescription preResolveAttachment;
 
 	// ~ vulkan functions ~
 

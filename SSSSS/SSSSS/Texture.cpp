@@ -207,18 +207,48 @@ VkSampleCountFlagBits RenderTexture::GetMsaaSamples() const
 	return msaaSamples;
 }
 
-VkAttachmentDescription RenderTexture::GetColorAttachment() const
+VkAttachmentDescription RenderTexture::GetColorAttachment(bool clear) const
 {
+	VkAttachmentDescription colorAttachment = {};
+	colorAttachment.format = textureFormat;
+	colorAttachment.samples = VK_SAMPLE_COUNT_1_BIT,//no msaa;
+	//if msaa is supported, this is the resolve destination which does not require clear, 
+	//beacause resolve is a full screen operation, but if msaa is not supported, 
+	//this is the final result, clear is needed.
+	colorAttachment.loadOp = supportMsaa ? VK_ATTACHMENT_LOAD_OP_DONT_CARE : (clear ? VK_ATTACHMENT_LOAD_OP_CLEAR : VK_ATTACHMENT_LOAD_OP_LOAD);
+	colorAttachment.storeOp = VK_ATTACHMENT_STORE_OP_STORE;
+	colorAttachment.stencilLoadOp = VK_ATTACHMENT_LOAD_OP_DONT_CARE;
+	colorAttachment.stencilStoreOp = VK_ATTACHMENT_STORE_OP_DONT_CARE;
+	colorAttachment.initialLayout = VK_IMAGE_LAYOUT_COLOR_ATTACHMENT_OPTIMAL;// VK_IMAGE_LAYOUT_UNDEFINED;
+	colorAttachment.finalLayout = VK_IMAGE_LAYOUT_COLOR_ATTACHMENT_OPTIMAL;
 	return colorAttachment;
 }
 
-VkAttachmentDescription RenderTexture::GetDepthAttachment() const
+VkAttachmentDescription RenderTexture::GetDepthAttachment(bool clear) const
 {
+	VkAttachmentDescription depthAttachment = {};
+	depthAttachment.format = depthFormat;
+	depthAttachment.samples = supportMsaa ? msaaSamples : VK_SAMPLE_COUNT_1_BIT,//msaa
+	depthAttachment.loadOp = clear ? VK_ATTACHMENT_LOAD_OP_CLEAR : VK_ATTACHMENT_LOAD_OP_LOAD;
+	depthAttachment.storeOp = VK_ATTACHMENT_STORE_OP_STORE;// VK_ATTACHMENT_STORE_OP_DONT_CARE;
+	depthAttachment.stencilLoadOp = VK_ATTACHMENT_LOAD_OP_DONT_CARE;
+	depthAttachment.stencilStoreOp = VK_ATTACHMENT_STORE_OP_DONT_CARE;
+	depthAttachment.initialLayout = VK_IMAGE_LAYOUT_DEPTH_STENCIL_ATTACHMENT_OPTIMAL;// VK_IMAGE_LAYOUT_UNDEFINED;
+	depthAttachment.finalLayout = VK_IMAGE_LAYOUT_DEPTH_STENCIL_ATTACHMENT_OPTIMAL;
 	return depthAttachment;
 }
 
-VkAttachmentDescription RenderTexture::GetPreResolveAttachment() const
+VkAttachmentDescription RenderTexture::GetPreResolveAttachment(bool clear) const
 {
+	VkAttachmentDescription preResolveAttachment = {};
+	preResolveAttachment.format = textureFormat;
+	preResolveAttachment.samples = msaaSamples;//msaa;
+	preResolveAttachment.loadOp = clear ? VK_ATTACHMENT_LOAD_OP_CLEAR : VK_ATTACHMENT_LOAD_OP_LOAD;
+	preResolveAttachment.storeOp = VK_ATTACHMENT_STORE_OP_STORE;
+	preResolveAttachment.stencilLoadOp = VK_ATTACHMENT_LOAD_OP_DONT_CARE;
+	preResolveAttachment.stencilStoreOp = VK_ATTACHMENT_STORE_OP_DONT_CARE;
+	preResolveAttachment.initialLayout = VK_IMAGE_LAYOUT_COLOR_ATTACHMENT_OPTIMAL;// VK_IMAGE_LAYOUT_UNDEFINED;
+	preResolveAttachment.finalLayout = VK_IMAGE_LAYOUT_COLOR_ATTACHMENT_OPTIMAL;
 	return preResolveAttachment;
 }
 
@@ -267,15 +297,6 @@ void RenderTexture::CreateRenderTextureImage()
 			preResolveImageMemory);
 		preResolveImageView = pRenderer->CreateImageView(preResolveImage, textureFormat, VK_IMAGE_ASPECT_COLOR_BIT, 1);
 		pRenderer->TransitionImageLayout(pRenderer->defaultCommandPool, preResolveImage, textureFormat, VK_IMAGE_LAYOUT_UNDEFINED, VK_IMAGE_LAYOUT_COLOR_ATTACHMENT_OPTIMAL, 1);
-
-		preResolveAttachment.format = textureFormat;
-		preResolveAttachment.samples = msaaSamples;//msaa;
-		preResolveAttachment.loadOp = VK_ATTACHMENT_LOAD_OP_CLEAR;
-		preResolveAttachment.storeOp = VK_ATTACHMENT_STORE_OP_STORE;
-		preResolveAttachment.stencilLoadOp = VK_ATTACHMENT_LOAD_OP_DONT_CARE;
-		preResolveAttachment.stencilStoreOp = VK_ATTACHMENT_STORE_OP_DONT_CARE;
-		preResolveAttachment.initialLayout = VK_IMAGE_LAYOUT_UNDEFINED;
-		preResolveAttachment.finalLayout = VK_IMAGE_LAYOUT_COLOR_ATTACHMENT_OPTIMAL;
 	}
 
 	//depth
@@ -295,15 +316,6 @@ void RenderTexture::CreateRenderTextureImage()
 			depthImageMemory);
 		depthImageView = pRenderer->CreateImageView(depthImage, depthFormat, VK_IMAGE_ASPECT_DEPTH_BIT, 1);
 		pRenderer->TransitionImageLayout(pRenderer->defaultCommandPool, depthImage, depthFormat, VK_IMAGE_LAYOUT_UNDEFINED, VK_IMAGE_LAYOUT_DEPTH_STENCIL_ATTACHMENT_OPTIMAL, 1);
-
-		depthAttachment.format = depthFormat;
-		depthAttachment.samples = supportMsaa ? msaaSamples : VK_SAMPLE_COUNT_1_BIT,//msaa
-		depthAttachment.loadOp = VK_ATTACHMENT_LOAD_OP_CLEAR;
-		depthAttachment.storeOp = VK_ATTACHMENT_STORE_OP_DONT_CARE;
-		depthAttachment.stencilLoadOp = VK_ATTACHMENT_LOAD_OP_DONT_CARE;
-		depthAttachment.stencilStoreOp = VK_ATTACHMENT_STORE_OP_DONT_CARE;
-		depthAttachment.initialLayout = VK_IMAGE_LAYOUT_UNDEFINED;
-		depthAttachment.finalLayout = VK_IMAGE_LAYOUT_DEPTH_STENCIL_ATTACHMENT_OPTIMAL;
 	}
 
 	//color
@@ -321,18 +333,6 @@ void RenderTexture::CreateRenderTextureImage()
 	colorImageView = pRenderer->CreateImageView(textureImage, textureFormat, VK_IMAGE_ASPECT_COLOR_BIT, mipLevels);
 	pRenderer->TransitionImageLayout(pRenderer->defaultCommandPool, textureImage, textureFormat, VK_IMAGE_LAYOUT_UNDEFINED, VK_IMAGE_LAYOUT_COLOR_ATTACHMENT_OPTIMAL, 1);
 	currentLayout = VK_IMAGE_LAYOUT_COLOR_ATTACHMENT_OPTIMAL;
-
-	colorAttachment.format = textureFormat;
-	colorAttachment.samples = VK_SAMPLE_COUNT_1_BIT,//no msaa;
-	//if msaa is supported, this is the resolve destination which does not require clear, 
-	//beacause resolve is a full screen operation, but if msaa is not supported, 
-	//this is the final result, clear is needed.
-	colorAttachment.loadOp = supportMsaa ? VK_ATTACHMENT_LOAD_OP_DONT_CARE : VK_ATTACHMENT_LOAD_OP_CLEAR;
-	colorAttachment.storeOp = VK_ATTACHMENT_STORE_OP_STORE;
-	colorAttachment.stencilLoadOp = VK_ATTACHMENT_LOAD_OP_DONT_CARE;
-	colorAttachment.stencilStoreOp = VK_ATTACHMENT_STORE_OP_DONT_CARE;
-	colorAttachment.initialLayout = VK_IMAGE_LAYOUT_UNDEFINED;
-	colorAttachment.finalLayout = VK_IMAGE_LAYOUT_COLOR_ATTACHMENT_OPTIMAL;
 }
 
 void RenderTexture::TransitionLayoutToWrite(VkCommandBuffer commandBuffer)

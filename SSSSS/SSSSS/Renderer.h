@@ -12,6 +12,7 @@ class Level;
 class Pass;
 class Frame;
 class Shader;
+class Texture;
 
 class Renderer
 {
@@ -102,9 +103,8 @@ public:
 	// ~ bind descriptors ~
 
 	void BindUniformBufferToDescriptorSets(VkBuffer buffer, VkDeviceSize size, const std::vector<VkDescriptorSet>& descriptorSets, uint32_t binding);
-	//void BindUniformBufferToDescriptorSetsCmd(VkCommandBuffer commandBuffer, VkPipelineLayout pipelineLayout, VkBuffer buffer, VkDeviceSize size, const std::vector<VkDescriptorSet>& descriptorSets, uint32_t set, uint32_t binding);
-	void BindTextureToDescriptorSets(VkImageView textureImageView, VkSampler textureSampler, const std::vector<VkDescriptorSet>& descriptorSets, uint32_t binding);
-	//void BindTextureToDescriptorSetsCmd(VkCommandBuffer commandBuffer, VkPipelineLayout pipelineLayout, VkImageView textureImageView, VkSampler textureSampler, const std::vector<VkDescriptorSet>& descriptorSets, uint32_t set, uint32_t binding);
+	void BindTextureToDescriptorSets(VkImageView textureImageView, VkSampler textureSampler, const std::vector<VkDescriptorSet>& descriptorSets, uint32_t binding, uint32_t elementOffset = 0);
+	void BindTextureArrayToDescriptorSets(const std::vector<Texture*>& pTextureVec, const std::vector<VkDescriptorSet>& descriptorSets, uint32_t binding);
 
 	// ~ general pipeline functions ~
 
@@ -123,10 +123,18 @@ public:
 
 	void CreateDescriptorSetLayout(
 		VkDescriptorSetLayout& descriptorSetLayout, 
-		uint32_t uboCount, 
 		uint32_t uboBindingOffset, 
-		uint32_t texCount, 
-		uint32_t texBindingOffset);
+		uint32_t uboCount, 
+		uint32_t texBindingOffset,
+		uint32_t texCount);
+
+	//this is for texture arrays
+	void CreateDescriptorSetLayoutTextureArray(
+		VkDescriptorSetLayout& descriptorSetLayout,
+		uint32_t uboBindingOffset,
+		uint32_t uboCount,
+		uint32_t texBindingOffset,
+		const std::vector<uint32_t>& texCounts);
 
 	void CreateDescriptorSet(
 		VkDescriptorSet& descriptorSet, 
@@ -157,6 +165,7 @@ public:
 	void CreatePipeline(
 		VkPipeline& pipeline,
 		VkPipelineLayout& pipelineLayout,
+		uint32_t renderTargetCount,
 		VkRenderPass renderPass,
 		const std::vector<VkDescriptorSetLayout>& descriptorSetLayout,
 		VkExtent2D extent,
@@ -174,15 +183,15 @@ public:
 		const Pass& pass);
 
 	void RecordCommand(
-		glm::vec4 colorClear,
-		glm::vec2 depthStencilClear,
 		Pass& pass,
 		VkCommandBuffer commandBuffer,
 		VkPipeline pipeline,
 		VkPipelineLayout pipelineLayout,
 		VkRenderPass renderPassFallback,
 		VkFramebuffer frameBufferFallback,
-		VkExtent2D extentFallback);
+		VkExtent2D extentFallback,
+		glm::vec4 colorClear = glm::vec4(0.0f, 0.0f, 0.0f, 0.0f),
+		glm::vec2 depthStencilClear = glm::vec2(1.0f, 0.0f));
 
 	void RecordCommandNoEnd(
 		glm::vec4 colorClear,
@@ -222,18 +231,27 @@ public:
 
 	std::vector<Frame> frameVec;
 
-	// ~ graphics pipeline resources ~
+	// ~ deferred pipeline resources ~
 	
-	VkPipeline graphicsPipeline;
-	VkPipelineLayout graphicsPipelineLayout;
+	VkPipeline deferredPipeline;
+	VkPipelineLayout deferredPipelineLayout;
 
-	// ~ defered pipeline resources ~
+	// ~ skin pipeline resources ~
 
-	VkPipeline offscreenPipeline;
-	VkPipelineLayout offscreenPipelineLayout;
+	VkPipeline skinPipeline;
+	VkPipelineLayout skinPipelineLayout;
+
+	// ~ standard pipeline resources ~
+
+	VkPipeline standardPipeline;
+	VkPipelineLayout standardPipelineLayout;
+
+	// ~ shadow mapping resources ~
+
+	VkPipeline shadowPipeline;
+	VkPipelineLayout shadowPipelineLayout;
 
 private:
-
 
 	// ~ structures ~
 

@@ -38,20 +38,18 @@ void Camera::CleanUp()
 	//do nothing
 }
 
-glm::mat4 Camera::GetProjectionMatrix()
+glm::mat4 Camera::GetProjectionMatrix() const
 {
 	glm::mat4 mat = glm::perspective(glm::radians(fov), width / (float)height, near, far);
 	mat[1][1] *= -1;
 	return mat;
 }
 
-glm::mat4 Camera::GetViewMatrix()
+glm::mat4 Camera::GetViewMatrix() const
 {
 	glm::mat4 mat = glm::lookAt(position, target, up);
 	return mat;
 }
-
-
 
 OrbitCamera::OrbitCamera(
 	const std::string& _name,

@@ -3,6 +3,7 @@
 #include "Renderer.h"
 #include "Texture.h"
 #include "Pass.h"
+#include "Light.h"
 
 Scene::Scene(const std::string& _name) : 
 	pRenderer(nullptr), name(_name)
@@ -24,25 +25,28 @@ void Scene::InitScene(Renderer* _pRenderer, VkDescriptorPool descriptorPool)
 
 	//create uniform resources
 	CreateSceneUniformBuffer();
-	pRenderer->CreateDescriptorSetLayout(
+	pRenderer->CreateDescriptorSetLayoutTextureArray(
 		sceneDescriptorSetLayout,
-		sUboCount,//only 1 sUBO
 		0,
-		static_cast<uint32_t>(pTextureVec.size()),
-		sUboCount);//only 1 sUBO, so offset is 1
+		sUboCount,//only 1 sUBO
+		sUboCount,//only 1 sUBO, so offset is 1
+		{ static_cast<uint32_t>(pTextureVec.size()) });//texture array instead of texture
 	pRenderer->CreateDescriptorSet(
 		sceneDescriptorSet,
 		descriptorPool,
 		sceneDescriptorSetLayout);
-	
+
 	//bind ubo
 	pRenderer->BindUniformBufferToDescriptorSets(sceneUniformBuffer, sizeof(sUBO), { sceneDescriptorSet }, 0);//only 1 sUBO
 
-	//bind texture
-	for (int i = 0; i < pTextureVec.size(); i++)
-	{
-		pRenderer->BindTextureToDescriptorSets(pTextureVec[i]->GetTextureImageView(), pTextureVec[i]->GetSampler(), { sceneDescriptorSet }, sUboCount + i);//only 1 sUBO, so offset is 1
-	}
+	//bind texture array
+	//for (int i = 0; i < pTextureVec.size(); i++)
+	//{
+	//	pRenderer->BindTextureToDescriptorSets(pTextureVec[i]->GetTextureImageView(), pTextureVec[i]->GetSampler(), { sceneDescriptorSet }, sUboCount + 0, i);//only 1 sUBO, so offset is 1. since this is texture array, elementOffset is not 0 anymore
+	//}
+
+	//same effect
+	pRenderer->BindTextureArrayToDescriptorSets(pTextureVec, { sceneDescriptorSet }, sUboCount + 0);
 }
 
 void Scene::CleanUp()
@@ -91,9 +95,15 @@ VkDescriptorSetLayout Scene::GetSceneDescriptorSetLayout() const
 	return sceneDescriptorSetLayout;
 }
 
-void Scene::AddTexture(Texture* pTexture)
+void Scene::AddLight(Light* pLight)
 {
-	pTextureVec.push_back(pTexture);
+	pLight->SetScene(this);
+	pLightVec.push_back(pLight);
+	if (pLight->GetRenderTexturePtr() != nullptr)
+	{
+		pLight->SetTextureIndex(static_cast<int32_t>(pTextureVec.size()));
+		pTextureVec.push_back(pLight->GetRenderTexturePtr());
+	}
 }
 
 void Scene::AddPass(Pass* pPass)
@@ -104,6 +114,20 @@ void Scene::AddPass(Pass* pPass)
 
 void Scene::UpdateSceneUniformBuffer()
 {
+	uint32_t lightCount = static_cast<uint32_t>(pLightVec.size());
+	if (lightCount > MAX_LIGHTS_PER_SCENE)
+		lightCount = MAX_LIGHTS_PER_SCENE;
+	sUBO.lightCount = lightCount;
+
+	for (uint32_t i = 0; i < lightCount; i++)
+	{
+		sUBO.lightArr[i].view = pLightVec[i]->GetViewMatrix();
+		sUBO.lightArr[i].proj = pLightVec[i]->GetProjectionMatrix();
+		sUBO.lightArr[i].color = glm::vec4(pLightVec[i]->GetColor(), 1);
+		sUBO.lightArr[i].position = glm::vec4(pLightVec[i]->GetPosition(), 1);
+		sUBO.lightArr[i].textureIndex = pLightVec[i]->GetTextureIndex();
+	}
+
 	void* data;
 	vkMapMemory(pRenderer->GetDevice(), sceneUniformBufferMemory, 0, sizeof(sUBO), 0, &data);
 	memcpy(data, &sUBO, sizeof(sUBO));

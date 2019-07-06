@@ -5,8 +5,15 @@
 #include "GlobalInclude.glsl"
 #include "GlobalIncludeFrag.glsl"
 
-layout(set = PASS_SET, binding = TEXTURE_SLOT(PASS, 0)) uniform sampler2D texSamplerColor;
+layout(set = PASS_SET, binding = TEXTURE_SLOT(PASS, 0)) uniform sampler2D texSamplerDiffuse;
+layout(set = PASS_SET, binding = TEXTURE_SLOT(PASS, 1)) uniform sampler2D texSamplerSpecular;
 
-void main() {
-    outColor = texture(texSamplerColor, fragTexCoord);
+layout(location = 0) out vec4 outColor;
+
+void main() 
+{
+	if(sceneUBO.deferredMode == 0)
+		outColor = vec4(texture(texSamplerDiffuse, fragTexCoord).rgb, 1.0);
+	else if(sceneUBO.deferredMode == 1)
+		outColor = vec4(texture(texSamplerSpecular, fragTexCoord).rgb, 1.0);
 }

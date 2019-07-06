@@ -17,8 +17,8 @@ public:
 	virtual ~Camera();
 
 	void InitCamera();
-	glm::mat4 GetProjectionMatrix();
-	glm::mat4 GetViewMatrix();
+	glm::mat4 GetProjectionMatrix() const;
+	glm::mat4 GetViewMatrix() const;
 
 	void CleanUp();
 

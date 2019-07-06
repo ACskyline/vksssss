@@ -8,21 +8,48 @@
 layout(set = PASS_SET, binding = TEXTURE_SLOT(PASS, 0)) uniform sampler2D texSamplerColor;
 layout(set = PASS_SET, binding = TEXTURE_SLOT(PASS, 1)) uniform sampler2D texSamplerNormal;
 
-void main() {
-	vec3 normalAsColor = fragGeometryNormal * 0.5 + 0.5;
-	vec3 tangentAsColor = fragTangent * 0.5 + 0.5;
+layout(set = SCENE_SET, binding = TEXTURE_SLOT(SCENE, 0)) uniform sampler2D lightTextureArray[MAX_LIGHTS_PER_SCENE];
+
+layout(location = 0) out vec4 outDiffuse;
+layout(location = 1) out vec4 outSpecular;
+
+void main()
+{
+	vec3 normalAsColor = normalize(fragGeometryNormal) * 0.5 + 0.5;
+	vec3 tangentAsColor = normalize(fragTangent) * 0.5 + 0.5;
 	vec2 uv = FlipV(fragTexCoord);
+	//TBN have to be re-normalized because of the fragment interpolation 
 	mat3 tangentToWorld = mat3(normalize(fragTangent), normalize(fragBitangent), normalize(fragGeometryNormal));
-	vec3 normalWorld = normalize(tangentToWorld * normalize((texture(texSamplerNormal, uv).xyz * 2.0 - 1.0)));
+	vec3 normal = texture(texSamplerNormal, uv).xyz;
+	vec3 normalWorld = normalize(tangentToWorld * normalize((normal * 2.0 - 1.0)));
 	vec3 normalWorldAsColor = normalWorld * 0.5 + 0.5;
-	if(sceneUBO.mode == 0)
-		outColor = vec4(normalWorldAsColor, 1.0);
-	else if(sceneUBO.mode == 1)
-		outColor = vec4(normalAsColor, 1.0);
-	else if(sceneUBO.mode == 2)
-		outColor = vec4(tangentAsColor, 1.0);
-	else if(sceneUBO.mode == 3)
-		outColor = texture(texSamplerNormal, uv);
-	else if(sceneUBO.mode == 4)
-		outColor = texture(texSamplerColor, uv);
+	vec3 albedo = texture(texSamplerColor, uv).rgb;
+	
+	if(sceneUBO.offscreenMode == 0)
+		outDiffuse = vec4(albedo, 1.0);
+	else if(sceneUBO.offscreenMode == 1)
+		outDiffuse = vec4(normal, 1.0);
+
+	vec3 specularTotal = vec3(0, 0, 0);
+	for(uint i = 0;i<sceneUBO.lightCount;i++)
+	{
+		specularTotal += 
+			sceneUBO.lightArr[i].color.rgb *
+//			KS_Skin_Specular(
+//				normalWorld, 
+//				normalize(sceneUBO.lightArr[i].position.xyz - fragPosition),
+//				normalize(passUBO.cameraPosition.xyz - fragPosition),
+//				sceneUBO.m,
+//				sceneUBO.rho_s) * 
+			ShadowFeeler(
+				sceneUBO.lightArr[i].view,
+				sceneUBO.lightArr[i].proj,
+				fragPosition,
+				lightTextureArray[sceneUBO.lightArr[i].textureIndex]);
+	}
+
+	if(sceneUBO.offscreenMode == 0)
+		outSpecular = vec4(normalWorldAsColor, 1.0);
+	else if(sceneUBO.offscreenMode == 1)
+		outSpecular = vec4(specularTotal, 1.0);
 }

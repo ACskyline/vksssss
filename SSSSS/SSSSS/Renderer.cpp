@@ -12,6 +12,7 @@
 #include "Pass.h"
 #include "Scene.h"
 #include "Level.h"
+#include "Texture.h"
 
 Renderer::Renderer(int _width, int _height, int _framesInFlight)
 	: width(_width), height(_height), framesInFlight(_framesInFlight)
@@ -666,7 +667,7 @@ VkDescriptorSetLayout Renderer::GetSmallestFrameDescriptorSetLayout() const
 	return result;
 }
 
-void Renderer::CreateDescriptorSetLayout(VkDescriptorSetLayout& descriptorSetLayout, uint32_t uboCount, uint32_t uboBindingOffset, uint32_t texCount, uint32_t texBindingOffset)
+void Renderer::CreateDescriptorSetLayout(VkDescriptorSetLayout& descriptorSetLayout, uint32_t uboBindingOffset, uint32_t uboCount, uint32_t texBindingOffset, uint32_t texCount)
 {
 	//IMPORTANT, VkDescriptorSetLayoutBinding is similar to D3D12_ROOT_DESCRIPTOR in D3D12
 	//it is referenced by VkDescriptorSetLayout during VkDescriptorSetLayout creation
@@ -707,6 +708,54 @@ void Renderer::CreateDescriptorSetLayout(VkDescriptorSetLayout& descriptorSetLay
 	layoutInfo.pBindings = bindings.data();
 
 	if (vkCreateDescriptorSetLayout(device, &layoutInfo, nullptr, &descriptorSetLayout) != VK_SUCCESS) 
+	{
+		throw std::runtime_error("failed to create descriptor set layout!");
+	}
+}
+
+void Renderer::CreateDescriptorSetLayoutTextureArray(VkDescriptorSetLayout& descriptorSetLayout, uint32_t uboBindingOffset, uint32_t uboCount, uint32_t texBindingOffset, const std::vector<uint32_t>& texCounts)
+{
+	//IMPORTANT, VkDescriptorSetLayoutBinding is similar to D3D12_ROOT_DESCRIPTOR in D3D12
+	//it is referenced by VkDescriptorSetLayout during VkDescriptorSetLayout creation
+	//just like D3D12_ROOT_DESCRIPTOR is referenced by D3D12_ROOT_PARAMETER (not during D3D12_ROOT_PARAMETER creation because D3D12_ROOT_PARAMETER does not require creation) in D3D12
+
+	//descriptorCount is the number of descriptors contained in the binding, accessed in a shader as an array, 
+	//except if descriptorType is VK_DESCRIPTOR_TYPE_INLINE_UNIFORM_BLOCK_EXT in which case 
+	//descriptorCount is the size in bytes of the inline uniform block.If descriptorCount is zero this binding entry is reserved 
+	//and the resource must not be accessed from any stage via this binding within any pipeline using the set layout.
+
+	//IMPORTANT, VkDescriptorSetLayout is similar to D3D12_ROOT_PARAMETER in D3D12
+	//it is bound to pipeline layout during pipeline layout creation
+	//just like root parameter is bound to root signature during root signature creation in D3D12
+
+	uint32_t texArrCount = static_cast<uint32_t>(texCounts.size());
+
+	std::vector<VkDescriptorSetLayoutBinding> bindings(uboCount + texArrCount);
+
+	for (uint32_t i = 0; i < uboCount; i++)
+	{
+		bindings[i].binding = uboBindingOffset + i;
+		bindings[i].descriptorCount = 1;
+		bindings[i].descriptorType = VK_DESCRIPTOR_TYPE_UNIFORM_BUFFER;
+		bindings[i].pImmutableSamplers = nullptr;
+		bindings[i].stageFlags = VK_SHADER_STAGE_ALL_GRAPHICS;// VK_SHADER_STAGE_VERTEX_BIT;
+	}
+
+	for (uint32_t i = 0; i < texArrCount; i++)
+	{
+		bindings[uboCount + i].binding = texBindingOffset + i;
+		bindings[uboCount + i].descriptorCount = texCounts[i];
+		bindings[uboCount + i].descriptorType = VK_DESCRIPTOR_TYPE_COMBINED_IMAGE_SAMPLER;
+		bindings[uboCount + i].pImmutableSamplers = nullptr;
+		bindings[uboCount + i].stageFlags = VK_SHADER_STAGE_FRAGMENT_BIT;
+	}
+
+	VkDescriptorSetLayoutCreateInfo layoutInfo = {};
+	layoutInfo.sType = VK_STRUCTURE_TYPE_DESCRIPTOR_SET_LAYOUT_CREATE_INFO;
+	layoutInfo.bindingCount = static_cast<uint32_t>(bindings.size());
+	layoutInfo.pBindings = bindings.data();
+
+	if (vkCreateDescriptorSetLayout(device, &layoutInfo, nullptr, &descriptorSetLayout) != VK_SUCCESS)
 	{
 		throw std::runtime_error("failed to create descriptor set layout!");
 	}
@@ -799,6 +848,7 @@ void Renderer::CreateCommandBuffers(VkCommandPool commandPool, std::vector<VkCom
 void Renderer::CreatePipeline(
 	VkPipeline& pipeline,
 	VkPipelineLayout& pipelineLayout,
+	uint32_t renderTargetCount,
 	VkRenderPass renderPass,
 	const std::vector<VkDescriptorSetLayout>& descriptorSetLayout,
 	VkExtent2D extent,
@@ -912,13 +962,14 @@ void Renderer::CreatePipeline(
 	VkPipelineColorBlendAttachmentState colorBlendAttachment = {};
 	colorBlendAttachment.colorWriteMask = VK_COLOR_COMPONENT_R_BIT | VK_COLOR_COMPONENT_G_BIT | VK_COLOR_COMPONENT_B_BIT | VK_COLOR_COMPONENT_A_BIT;
 	colorBlendAttachment.blendEnable = VK_FALSE;
+	std::vector<VkPipelineColorBlendAttachmentState> colorBlendAttachmentVec(renderTargetCount, colorBlendAttachment);
 
 	VkPipelineColorBlendStateCreateInfo colorBlending = {};
 	colorBlending.sType = VK_STRUCTURE_TYPE_PIPELINE_COLOR_BLEND_STATE_CREATE_INFO;
 	colorBlending.logicOpEnable = VK_FALSE;
 	colorBlending.logicOp = VK_LOGIC_OP_COPY;
-	colorBlending.attachmentCount = 1;
-	colorBlending.pAttachments = &colorBlendAttachment;
+	colorBlending.attachmentCount = static_cast<uint32_t>(colorBlendAttachmentVec.size());
+	colorBlending.pAttachments = colorBlendAttachmentVec.data();
 	colorBlending.blendConstants[0] = 0.0f;
 	colorBlending.blendConstants[1] = 0.0f;
 	colorBlending.blendConstants[2] = 0.0f;
@@ -976,6 +1027,7 @@ void Renderer::CreatePipeline(
 	CreatePipeline(
 		pipeline,
 		pipelineLayout,
+		pass.HasRenderTexture() ? pass.GetRenderTextureCount() : 1,
 		pass.HasRenderTexture() ? pass.GetRenderPass() : swapChainRenderPass,
 		descriptorSetLayouts,
 		pass.HasRenderTexture() ? pass.GetExtent() : swapChainExtent,
@@ -989,22 +1041,20 @@ void Renderer::CreatePipeline(
 }
 
 void Renderer::RecordCommand(
-	glm::vec4 colorClear,
-	glm::vec2 depthStencilClear,
 	Pass& pass,
 	VkCommandBuffer commandBuffer,
 	VkPipeline pipeline,
 	VkPipelineLayout pipelineLayout,
 	VkRenderPass renderPassFallback,
 	VkFramebuffer frameBufferFallback,
-	VkExtent2D extentFallback)
+	VkExtent2D extentFallback,
+	glm::vec4 colorClear,
+	glm::vec2 depthStencilClear)
 {
 
 	bool customRenderTarget = pass.HasRenderTexture();
 	int rtCount = 0;
 
-	//clear values
-	std::vector<VkClearValue> clearValues;
 	if (customRenderTarget)
 	{
 		//multiple render target is only available and meaningfull when rendering to render textures
@@ -1019,13 +1069,17 @@ void Renderer::RecordCommand(
 		rtCount = 1;
 	}
 
-	VkClearValue clearValue;
-	clearValue.color = { colorClear.r, colorClear.g, colorClear.b, colorClear.a };
-	clearValues.resize(rtCount + 1, clearValue);//only one depth stencil attachment will be present
-	clearValues[rtCount].depthStencil = { depthStencilClear.r, static_cast<uint32_t>(depthStencilClear.g) };
-
+	std::vector<VkClearValue> clearValues;
+	if (pass.GetClear())
+	{
+		//clear values
+		VkClearValue clearValue;
+		clearValue.color = { colorClear.r, colorClear.g, colorClear.b, colorClear.a };
+		clearValues.resize(rtCount + 1, clearValue);//only one depth stencil attachment will be present
+		clearValues[rtCount].depthStencil = { depthStencilClear.r, static_cast<uint32_t>(depthStencilClear.g) };
+	}
 	//bind pass descriptor set
-	vkCmdBindDescriptorSets(commandBuffer, VK_PIPELINE_BIND_POINT_GRAPHICS, pipelineLayout, static_cast<int>(UNIFORM_SLOT::PASS), 1, pass.GetPassDescriptorSetPtr(), 0, nullptr);
+	vkCmdBindDescriptorSets(commandBuffer, VK_PIPELINE_BIND_POINT_GRAPHICS, pipelineLayout, static_cast<uint32_t>(UNIFORM_SLOT::PASS), 1, pass.GetPassDescriptorSetPtr(), 0, nullptr);
 
 	VkRenderPassBeginInfo renderPassInfo = {};
 	renderPassInfo.sType = VK_STRUCTURE_TYPE_RENDER_PASS_BEGIN_INFO;
@@ -1046,7 +1100,7 @@ void Renderer::RecordCommand(
 		VkBuffer vertexBuffers[] = { mesh->GetVertexBuffer() };
 		VkDeviceSize offsets[] = { 0 };
 		//bind object descriptor set
-		vkCmdBindDescriptorSets(commandBuffer, VK_PIPELINE_BIND_POINT_GRAPHICS, pipelineLayout, static_cast<int>(UNIFORM_SLOT::OBJECT), 1, mesh->GetObjectDescriptorSetPtr(), 0, nullptr);
+		vkCmdBindDescriptorSets(commandBuffer, VK_PIPELINE_BIND_POINT_GRAPHICS, pipelineLayout, static_cast<uint32_t>(UNIFORM_SLOT::OBJECT), 1, mesh->GetObjectDescriptorSetPtr(), 0, nullptr);
 
 		//bind vbo
 		vkCmdBindVertexBuffers(commandBuffer, 0, 1, vertexBuffers, offsets);
@@ -1146,7 +1200,6 @@ void Renderer::CleanUpLevels()
 		level->CleanUp();
 	}
 }
-
 
 // ~ debug layer ~
 
@@ -1306,6 +1359,8 @@ void Renderer::CreateLogicalDevice()
 	VkPhysicalDeviceFeatures deviceFeatures = {};
 	//TEXTURE RELATED
 	deviceFeatures.samplerAnisotropy = VK_TRUE;
+	//TEXTURE ARRRAY RELATED
+	deviceFeatures.shaderSampledImageArrayDynamicIndexing = VK_TRUE;//seems unnecessary, not sure why
 
 	VkDeviceCreateInfo createInfo = {};
 	createInfo.sType = VK_STRUCTURE_TYPE_DEVICE_CREATE_INFO;
@@ -1510,11 +1565,17 @@ void Renderer::CleanUpSwapChain()
 	vkDestroyDescriptorPool(device, defaultDescriptorPool, nullptr);//descriptor pool is related to swap chain images size
 
 	//custom pipelines
-	vkDestroyPipeline(device, graphicsPipeline, nullptr);
-	vkDestroyPipelineLayout(device, graphicsPipelineLayout, nullptr);
+	vkDestroyPipeline(device, deferredPipeline, nullptr);
+	vkDestroyPipelineLayout(device, deferredPipelineLayout, nullptr);
 
-	vkDestroyPipeline(device, offscreenPipeline, nullptr);
-	vkDestroyPipelineLayout(device, offscreenPipelineLayout, nullptr);
+	vkDestroyPipeline(device, skinPipeline, nullptr);
+	vkDestroyPipelineLayout(device, skinPipelineLayout, nullptr);
+
+	vkDestroyPipeline(device, standardPipeline, nullptr);
+	vkDestroyPipelineLayout(device, standardPipelineLayout, nullptr);
+
+	vkDestroyPipeline(device, shadowPipeline, nullptr);
+	vkDestroyPipelineLayout(device, shadowPipelineLayout, nullptr);
 }
 
 void Renderer::CreateImageViews() 
@@ -1958,7 +2019,7 @@ void Renderer::BindUniformBufferToDescriptorSets(VkBuffer buffer, VkDeviceSize s
 	}
 }
 
-void Renderer::BindTextureToDescriptorSets(VkImageView textureImageView, VkSampler textureSampler, const std::vector<VkDescriptorSet>& descriptorSets, uint32_t binding)
+void Renderer::BindTextureToDescriptorSets(VkImageView textureImageView, VkSampler textureSampler, const std::vector<VkDescriptorSet>& descriptorSets, uint32_t binding, uint32_t elementOffset)
 {
 	//loop over descriptor sets
 	for (size_t i = 0; i < descriptorSets.size(); i++) 
@@ -1974,7 +2035,7 @@ void Renderer::BindTextureToDescriptorSets(VkImageView textureImageView, VkSampl
 		descriptorWrites[0].sType = VK_STRUCTURE_TYPE_WRITE_DESCRIPTOR_SET;
 		descriptorWrites[0].dstSet = descriptorSets[i];
 		descriptorWrites[0].dstBinding = binding;
-		descriptorWrites[0].dstArrayElement = 0;
+		descriptorWrites[0].dstArrayElement = elementOffset;
 		descriptorWrites[0].descriptorType = VK_DESCRIPTOR_TYPE_COMBINED_IMAGE_SAMPLER;
 		descriptorWrites[0].descriptorCount = 1;
 		descriptorWrites[0].pImageInfo = &imageInfo;
@@ -1983,56 +2044,33 @@ void Renderer::BindTextureToDescriptorSets(VkImageView textureImageView, VkSampl
 	}
 }
 
-//bind buffer to one specific binding point of one or more descriptor sets
-//if the vector only contains one descriptor set, then only the binding point of that descriptor set is bound
-//void Renderer::BindUniformBufferToDescriptorSetsCmd(VkCommandBuffer commandBuffer, VkPipelineLayout pipelineLayout, VkBuffer buffer, VkDeviceSize size, const std::vector<VkDescriptorSet>& descriptorSets, uint32_t set, uint32_t binding)
-//{
-//	//loop over descriptor sets
-//	for (size_t i = 0; i < descriptorSets.size(); i++) {
-//		std::array<VkWriteDescriptorSet, 1> descriptorWrites = {};
-//
-//		//uniform buffer
-//		VkDescriptorBufferInfo objectBufferInfo = {};
-//		objectBufferInfo.buffer = buffer;
-//		objectBufferInfo.offset = 0;
-//		objectBufferInfo.range = size;//sizeof(ObjectUniformBufferObject);
-//
-//		descriptorWrites[0].sType = VK_STRUCTURE_TYPE_WRITE_DESCRIPTOR_SET;
-//		descriptorWrites[0].dstSet = descriptorSets[i];
-//		descriptorWrites[0].dstBinding = binding;
-//		descriptorWrites[0].dstArrayElement = 0;
-//		descriptorWrites[0].descriptorType = VK_DESCRIPTOR_TYPE_UNIFORM_BUFFER;
-//		descriptorWrites[0].descriptorCount = 1;
-//		descriptorWrites[0].pBufferInfo = &objectBufferInfo;
-//
-//		vkCmdPushDescriptorSetKHR(commandBuffer, VK_PIPELINE_BIND_POINT_GRAPHICS, pipelineLayout, set, static_cast<uint32_t>(descriptorWrites.size()), descriptorWrites.data());
-//	}
-//}
+void Renderer::BindTextureArrayToDescriptorSets(const std::vector<Texture*>& pTextureVec, const std::vector<VkDescriptorSet>& descriptorSets, uint32_t binding)
+{
+	//image & sampler
+	std::vector<VkDescriptorImageInfo> imageInfoVec(pTextureVec.size());
+	for (int i = 0;i<imageInfoVec.size();i++)
+	{
+		imageInfoVec[i].imageLayout = VK_IMAGE_LAYOUT_SHADER_READ_ONLY_OPTIMAL;
+		imageInfoVec[i].imageView = pTextureVec[i]->GetTextureImageView();
+		imageInfoVec[i].sampler = pTextureVec[i]->GetSampler();
+	}
 
-//void Renderer::BindTextureToDescriptorSetsCmd(VkCommandBuffer commandBuffer, VkPipelineLayout pipelineLayout, VkImageView textureImageView, VkSampler textureSampler, const std::vector<VkDescriptorSet>& descriptorSets, uint32_t set, uint32_t binding)
-//{
-//	//loop over descriptor sets
-//	for (size_t i = 0; i < descriptorSets.size(); i++)
-//	{
-//		std::array<VkWriteDescriptorSet, 1> descriptorWrites = {};
-//
-//		//image & sampler
-//		VkDescriptorImageInfo imageInfo = {};
-//		imageInfo.imageLayout = VK_IMAGE_LAYOUT_SHADER_READ_ONLY_OPTIMAL;
-//		imageInfo.imageView = textureImageView;
-//		imageInfo.sampler = textureSampler;
-//
-//		descriptorWrites[0].sType = VK_STRUCTURE_TYPE_WRITE_DESCRIPTOR_SET;
-//		descriptorWrites[0].dstSet = descriptorSets[i];
-//		descriptorWrites[0].dstBinding = binding;
-//		descriptorWrites[0].dstArrayElement = 0;
-//		descriptorWrites[0].descriptorType = VK_DESCRIPTOR_TYPE_COMBINED_IMAGE_SAMPLER;
-//		descriptorWrites[0].descriptorCount = 1;
-//		descriptorWrites[0].pImageInfo = &imageInfo;
-//
-//		vkCmdPushDescriptorSetKHR(commandBuffer, VK_PIPELINE_BIND_POINT_GRAPHICS, pipelineLayout, set, static_cast<uint32_t>(descriptorWrites.size()), descriptorWrites.data());
-//	}
-//}
+	//loop over descriptor sets
+	for (size_t i = 0; i < descriptorSets.size(); i++)
+	{
+		std::array<VkWriteDescriptorSet, 1> descriptorWrites = {};
+
+		descriptorWrites[0].sType = VK_STRUCTURE_TYPE_WRITE_DESCRIPTOR_SET;
+		descriptorWrites[0].dstSet = descriptorSets[i];
+		descriptorWrites[0].dstBinding = binding;
+		descriptorWrites[0].dstArrayElement = 0;
+		descriptorWrites[0].descriptorType = VK_DESCRIPTOR_TYPE_COMBINED_IMAGE_SAMPLER;
+		descriptorWrites[0].descriptorCount = static_cast<uint32_t>(imageInfoVec.size());
+		descriptorWrites[0].pImageInfo = imageInfoVec.data();
+
+		vkUpdateDescriptorSets(device, static_cast<uint32_t>(descriptorWrites.size()), descriptorWrites.data(), 0, nullptr);
+	}
+}
 
 // ~ utility ~
 

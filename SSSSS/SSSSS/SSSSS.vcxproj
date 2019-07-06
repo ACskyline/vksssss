@@ -134,6 +134,7 @@
     <ClCompile Include="imgui\imgui_impl_vulkan.cpp" />
     <ClCompile Include="imgui\imgui_widgets.cpp" />
     <ClCompile Include="Level.cpp" />
+    <ClCompile Include="Light.cpp" />
     <ClCompile Include="Pass.cpp" />
     <ClCompile Include="main.cpp" />
     <ClCompile Include="Mesh.cpp" />
@@ -144,11 +145,17 @@
     <ClCompile Include="Texture.cpp" />
   </ItemGroup>
   <ItemGroup>
+    <None Include="blurh.frag" />
+    <None Include="blurv.frag" />
     <None Include="deferred.frag" />
     <None Include="deferred.vert" />
     <None Include="GlobalInclude.glsl" />
     <None Include="GlobalIncludeFrag.glsl" />
     <None Include="GlobalIncludeVert.glsl" />
+    <None Include="shadow.frag" />
+    <None Include="shadow.vert" />
+    <None Include="skin.frag" />
+    <None Include="skin.vert" />
     <None Include="standard.frag" />
     <None Include="standard.vert" />
   </ItemGroup>
@@ -164,6 +171,7 @@
     <ClInclude Include="imgui\imstb_textedit.h" />
     <ClInclude Include="imgui\imstb_truetype.h" />
     <ClInclude Include="Level.h" />
+    <ClInclude Include="Light.h" />
     <ClInclude Include="Pass.h" />
     <ClInclude Include="GlobalInclude.h" />
     <ClInclude Include="Mesh.h" />

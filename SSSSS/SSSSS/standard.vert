@@ -5,8 +5,11 @@
 #include "GlobalInclude.glsl"
 #include "GlobalIncludeVert.glsl"
 
-void main() {
-    gl_Position = passUBO.proj * passUBO.view * objectUBO.model * vec4(inPosition, 1.0);
+void main() 
+{
+	vec4 positionWorld = objectUBO.model * vec4(inPosition, 1.0);
+	fragPosition = positionWorld.xyz;
+    gl_Position = passUBO.proj * passUBO.view * positionWorld;
     fragGeometryNormal = (objectUBO.modelInvTrans * vec4(inNormal, 0.0)).xyz;
     fragTexCoord = inTexCoord;
 	fragTangent = normalize((objectUBO.model * vec4(inTangent.xyz, 0.0)).xyz);

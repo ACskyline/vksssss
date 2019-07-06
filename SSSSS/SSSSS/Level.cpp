@@ -1,5 +1,6 @@
 #include "Level.h"
 
+#include "Light.h"
 #include "Camera.h"
 #include "Texture.h"
 #include "Mesh.h"
@@ -45,6 +46,11 @@ void Level::AddCamera(Camera* pCamera)
 	pCameraVec.push_back(pCamera);
 }
 
+void Level::AddLight(Light* pLight)
+{
+	pLightVec.push_back(pLight);
+}
+
 std::vector<Pass*>& Level::GetPassVec()
 {
 	return pPassVec;
@@ -65,20 +71,13 @@ std::vector<Texture*>& Level::GetTextureVec()
 	return pTextureVec;
 }
 
-std::vector<Shader*>& Level::GetShaderVec()
-{
-	return pShaderVec;
-}
-
-std::vector<Camera*>& Level::GetCameraVec()
-{
-	return pCameraVec;
-}
-
 void Level::InitLevel(
 	Renderer* pRenderer,
 	VkDescriptorPool descriptorPool)
 {
+	for (auto pLight : pLightVec)
+		pLight->InitLight();
+
 	for (auto pCamera : pCameraVec)
 		pCamera->InitCamera();
 

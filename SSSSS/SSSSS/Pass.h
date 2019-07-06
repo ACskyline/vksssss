@@ -13,16 +13,17 @@ class RenderTexture;
 class Pass
 {
 public:
-	Pass(const std::string& _name);
+	Pass(const std::string& _name, bool _clear);
 	~Pass();
 
 	void AddMesh(Mesh* pMesh);
 	void AddTexture(Texture* pTexture);
 	void AddRenderTexture(RenderTexture* pRenderTexture);
-	void SetCamera(Camera* pCamera);
+	void SetCamera(Camera* _pCamera);
 	void AddShader(Shader* pShader);
 	void SetScene(Scene* _pScene);
 
+	bool GetClear() const;
 	int GetRenderTextureCount() const;
 	bool HasRenderTexture() const;
 	VkSampleCountFlagBits GetMsaaSamples() const;
@@ -51,13 +52,13 @@ public:
 		Renderer* _pRenderer, 
 		VkDescriptorPool descriptorPool);
 
-	//# Can't recreate render pass because a pipeline is fixed to the render pass.
-	//# If we want to reuse the pipeline, the render pass must remain the same.
-	//# This means if we want to dynamically change render target, we can't change the format and total number of render textures, but only which render textures we want to render to.
-	void RecreateFramebuffer();
-	
-	//# This function does not check whether the slot is valid nor whether the format is the same.
-	void ChangeRenderTexture(uint32_t slot, RenderTexture* pRenderTexture);
+	////# Can't recreate render pass because a pipeline is fixed to the render pass.
+	////# If we want to reuse the pipeline, the render pass must remain the same.
+	////# This means if we want to dynamically change render target, we can't change the format and total number of render textures, but only which render textures we want to render to.
+	//void RecreateFramebuffer();
+	//
+	////# This function does not check whether the slot is valid nor whether the format is the same.
+	//void ChangeRenderTexture(uint32_t slot, RenderTexture* pRenderTexture);
 
 	void CleanUp();
 
@@ -67,6 +68,7 @@ private:
 	Renderer* pRenderer;
 	Scene* pScene;
 	std::string name;
+	bool clear;
 	const uint32_t pUboCount = 1;
 
 	//asset containers

@@ -14,19 +14,42 @@
 
 #include <vulkan/vulkan.h>
 
+const uint32_t MAX_LIGHTS_PER_SCENE = 10;
+
 enum class UNIFORM_SLOT { SCENE, FRAME, PASS, OBJECT, COUNT };
+
+struct LightData {
+	glm::mat4 view = glm::mat4(1);
+	glm::mat4 proj = glm::mat4(1);
+	glm::vec4 color = { 0,0,0,0 };//Warning: Implementations sometimes get the std140 layout wrong for vec3 components. You are advised to manually pad your structures/arrays out and avoid using vec3 at all.
+	glm::vec4 position = { 0,0,0,0 };//https://www.khronos.org/opengl/wiki/Interface_Block_(GLSL)#Memory_layout
+	int32_t textureIndex = -1;//-1 means no texture is attached
+	uint32_t PADDING0 = 0;
+	uint32_t PADDING1 = 0;
+	uint32_t PADDING2 = 0;
+};
 
 //stored in scene
 struct SceneUniformBufferObject {
 	uint32_t time = 0;
-	uint32_t mode = 0;
+	uint32_t offscreenMode = 0;
+	uint32_t deferredMode = 0;
+	uint32_t lightCount = 0;
+	float m = 0.0f;
+	float rho_s = 0.0f;
+	float stretchAlpha = 0.0f;
+	float stretchBeta = 0.0f;
+	LightData lightArr[MAX_LIGHTS_PER_SCENE];
 };
 
 //stored in pass
 struct PassUniformBufferObject {
 	glm::mat4 view = glm::mat4(1);
 	glm::mat4 proj = glm::mat4(1);
+	glm::vec4 cameraPosition = glm::vec4(0);
 	uint32_t passNum = 0;
+	uint32_t widthRT = 0;//if multiple render targets are presented, only use the first one's width
+	uint32_t heightRT = 0;//if multiple render targets are presented, only use the first one's height
 };
 
 //stored in mesh

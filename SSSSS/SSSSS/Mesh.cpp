@@ -91,10 +91,10 @@ void Mesh::InitMesh(Renderer* _pRenderer, VkDescriptorPool descriptorPool)
 	CreateObjectUniformBuffer();
 	pRenderer->CreateDescriptorSetLayout(
 		objectDescriptorSetLayout,
-		oUboCount,//only 1 oUBO
 		0,
-		static_cast<uint32_t>(pTextureVec.size()),
-		oUboCount);//only 1 oUBO, so offset is 1
+		oUboCount,//only 1 oUBO
+		oUboCount,//only 1 oUBO, so offset is 1
+		static_cast<uint32_t>(pTextureVec.size()));
 	pRenderer->CreateDescriptorSet(
 		objectDescriptorSet,
 		descriptorPool,
@@ -232,7 +232,6 @@ void Mesh::InitFullScreenQuad()
 		0, 1, 2, 2, 3, 0
 	};
 }
-
 
 //adjacent triangles do not share vertices(vertices are unique)
 void Mesh::InitFromFile(const std::string& fileName)
