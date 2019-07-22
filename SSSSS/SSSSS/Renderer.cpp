@@ -63,7 +63,10 @@ void Renderer::InitAssets()
 	uint32_t passCount = 0;
 	uint32_t objectCount = 0;
 	uint32_t frameCount = 0;
-	uint32_t textureCount = 0;
+	uint32_t sTextureCount = 0;
+	uint32_t pTextureCount = 0;
+	uint32_t oTextureCount = 0;
+	uint32_t fTextureCount = 0;
 
 	for (auto level : pLevelVec)
 	{
@@ -71,35 +74,37 @@ void Renderer::InitAssets()
 		for (auto scene : level->GetSceneVec())
 		{
 			sUboCount += scene->GetUboCount();
+			sTextureCount += scene->GetTextureCount();
 		}
 
 		passCount += static_cast<uint32_t>(level->GetPassVec().size());
 		for (auto pass : level->GetPassVec())
 		{
 			pUboCount += pass->GetUboCount();
+			pTextureCount += pass->GetTextureCount();
 		}
 
 		objectCount += static_cast<uint32_t>(level->GetMeshVec().size());
 		for (auto mesh : level->GetMeshVec())
 		{
 			oUboCount += mesh->GetUboCount();
+			oTextureCount += mesh->GetTextureCount();
 		}
-
-		textureCount += static_cast<uint32_t>(level->GetTextureVec().size());
 	}
 
 	frameCount += static_cast<uint32_t>(frameVec.size());
 	for (auto& frame : frameVec)
 	{
 		fUboCount += frame.GetUboCount();
+		fTextureCount += frame.GetTextureCount();
 	}
 
 	//create descriptor pool
 	CreateDescriptorPool(
 		defaultDescriptorPool,
-		frameCount + sceneCount + passCount + objectCount + textureCount,
+		frameCount + sceneCount + passCount + objectCount,
 		sUboCount + pUboCount + oUboCount + fUboCount,
-		textureCount);
+		sTextureCount + pTextureCount + oTextureCount + fTextureCount);
 
 	for (auto level : pLevelVec)
 	{
@@ -596,13 +601,32 @@ void Renderer::CreateRenderPass(
 	if(preResolveAttachments.size() > 0)
 		subpass.pResolveAttachments = colorAttachmentRefs.data();
 
-	VkSubpassDependency dependency = {};
-	dependency.srcSubpass = VK_SUBPASS_EXTERNAL;
-	dependency.dstSubpass = 0;
-	dependency.srcStageMask = VK_PIPELINE_STAGE_COLOR_ATTACHMENT_OUTPUT_BIT;
-	dependency.srcAccessMask = 0;
-	dependency.dstStageMask = VK_PIPELINE_STAGE_COLOR_ATTACHMENT_OUTPUT_BIT;
-	dependency.dstAccessMask = VK_ACCESS_COLOR_ATTACHMENT_READ_BIT | VK_ACCESS_COLOR_ATTACHMENT_WRITE_BIT;
+	//https://vulkan.lunarg.com/doc/view/1.0.37.0/linux/vkspec.chunked/ch07s01.html#VkSubpassDependency
+	VkSubpassDependency dependency[2];
+	//If there is no subpass dependency from VK_SUBPASS_EXTERNAL to the first subpass that uses an attachment, then an implicit subpass dependency exists from VK_SUBPASS_EXTERNAL to the first subpass it is used in.The subpass dependency operates as if defined with the following parameters :
+	dependency[0].srcSubpass = VK_SUBPASS_EXTERNAL;
+	dependency[0].dstSubpass = 0; // First subpass attachment is used in
+	dependency[0].srcStageMask = VK_PIPELINE_STAGE_TOP_OF_PIPE_BIT;
+	dependency[0].dstStageMask = VK_PIPELINE_STAGE_ALL_GRAPHICS_BIT;// VK_PIPELINE_STAGE_ALL_COMMANDS_BIT;
+	dependency[0].srcAccessMask = 0;
+	dependency[0].dstAccessMask = VK_ACCESS_INPUT_ATTACHMENT_READ_BIT |
+		VK_ACCESS_COLOR_ATTACHMENT_READ_BIT |
+		VK_ACCESS_COLOR_ATTACHMENT_WRITE_BIT |
+		VK_ACCESS_DEPTH_STENCIL_ATTACHMENT_READ_BIT |
+		VK_ACCESS_DEPTH_STENCIL_ATTACHMENT_WRITE_BIT;
+	dependency[0].dependencyFlags = 0;
+	//Similarly, if there is no subpass dependency from the last subpass that uses an attachment to VK_SUBPASS_EXTERNAL, then an implicit subpass dependency exists from the last subpass it is used in to VK_SUBPASS_EXTERNAL.The subpass dependency operates as if defined with the following parameters :
+	dependency[1].srcSubpass = 0; // Last subpass attachment is used in
+	dependency[1].dstSubpass = VK_SUBPASS_EXTERNAL;
+	dependency[1].srcStageMask = VK_PIPELINE_STAGE_ALL_GRAPHICS_BIT;// VK_PIPELINE_STAGE_ALL_COMMANDS_BIT;
+	dependency[1].dstStageMask = VK_PIPELINE_STAGE_BOTTOM_OF_PIPE_BIT;
+	dependency[1].srcAccessMask = VK_ACCESS_INPUT_ATTACHMENT_READ_BIT |
+		VK_ACCESS_COLOR_ATTACHMENT_READ_BIT |
+		VK_ACCESS_COLOR_ATTACHMENT_WRITE_BIT |
+		VK_ACCESS_DEPTH_STENCIL_ATTACHMENT_READ_BIT |
+		VK_ACCESS_DEPTH_STENCIL_ATTACHMENT_WRITE_BIT;
+	dependency[1].dstAccessMask = 0;
+	dependency[1].dependencyFlags = 0;
 	
 	//render pass
 	//The idea is when msaa is enabled, the rendering results will be resolved to color attachments,
@@ -619,8 +643,8 @@ void Renderer::CreateRenderPass(
 	renderPassInfo.pAttachments = attachments.data();
 	renderPassInfo.subpassCount = 1;
 	renderPassInfo.pSubpasses = &subpass;
-	renderPassInfo.dependencyCount = 1;
-	renderPassInfo.pDependencies = &dependency;
+	renderPassInfo.dependencyCount = _countof(dependency);
+	renderPassInfo.pDependencies = dependency;
 
 	if (vkCreateRenderPass(device, &renderPassInfo, nullptr, &renderPass) != VK_SUCCESS) {
 		throw std::runtime_error("failed to create render pass!");
@@ -848,7 +872,7 @@ void Renderer::CreateCommandBuffers(VkCommandPool commandPool, std::vector<VkCom
 void Renderer::CreatePipeline(
 	VkPipeline& pipeline,
 	VkPipelineLayout& pipelineLayout,
-	uint32_t renderTargetCount,
+	uint32_t colorRenderTargetCount,
 	VkRenderPass renderPass,
 	const std::vector<VkDescriptorSetLayout>& descriptorSetLayout,
 	VkExtent2D extent,
@@ -857,9 +881,16 @@ void Renderer::CreatePipeline(
 	Shader* pTesCtrlShader,
 	Shader* pTesEvalShader,
 	Shader* pGeomShader,
-	Shader* pFragShader)
+	Shader* pFragShader,
+	bool enableDepthTest,
+	bool enableDepthWrite,
+	bool enableStencil,
+	VkCompareOp stencilCompareOp,
+	VkStencilOp depthFailOp,
+	VkStencilOp stencilPassOp,
+	VkStencilOp stencilFailOp,
+	uint32_t stencilReference)
 {
-
 	std::vector<VkPipelineShaderStageCreateInfo> shaderStages;
 
 	//~ shader load begin ~
@@ -953,16 +984,24 @@ void Renderer::CreatePipeline(
 
 	VkPipelineDepthStencilStateCreateInfo depthStencil = {};
 	depthStencil.sType = VK_STRUCTURE_TYPE_PIPELINE_DEPTH_STENCIL_STATE_CREATE_INFO;
-	depthStencil.depthTestEnable = VK_TRUE;
-	depthStencil.depthWriteEnable = VK_TRUE;
+	depthStencil.depthTestEnable = enableDepthTest;
+	depthStencil.depthWriteEnable = enableDepthWrite;
 	depthStencil.depthCompareOp = VK_COMPARE_OP_LESS;
 	depthStencil.depthBoundsTestEnable = VK_FALSE;
-	depthStencil.stencilTestEnable = VK_FALSE;
+	depthStencil.stencilTestEnable = enableStencil;
+	depthStencil.front.compareOp = stencilCompareOp;
+	depthStencil.front.depthFailOp = depthFailOp;
+	depthStencil.front.passOp = stencilPassOp;
+	depthStencil.front.failOp = stencilFailOp;
+	depthStencil.front.compareMask = 0xffffffff;
+	depthStencil.front.writeMask = 0xffffffff;
+	depthStencil.front.reference = stencilReference;
+	depthStencil.back = depthStencil.front;//treat back the same way as front
 
 	VkPipelineColorBlendAttachmentState colorBlendAttachment = {};
 	colorBlendAttachment.colorWriteMask = VK_COLOR_COMPONENT_R_BIT | VK_COLOR_COMPONENT_G_BIT | VK_COLOR_COMPONENT_B_BIT | VK_COLOR_COMPONENT_A_BIT;
 	colorBlendAttachment.blendEnable = VK_FALSE;
-	std::vector<VkPipelineColorBlendAttachmentState> colorBlendAttachmentVec(renderTargetCount, colorBlendAttachment);
+	std::vector<VkPipelineColorBlendAttachmentState> colorBlendAttachmentVec(colorRenderTargetCount, colorBlendAttachment);
 
 	VkPipelineColorBlendStateCreateInfo colorBlending = {};
 	colorBlending.sType = VK_STRUCTURE_TYPE_PIPELINE_COLOR_BLEND_STATE_CREATE_INFO;
@@ -1027,7 +1066,7 @@ void Renderer::CreatePipeline(
 	CreatePipeline(
 		pipeline,
 		pipelineLayout,
-		pass.HasRenderTexture() ? pass.GetRenderTextureCount() : 1,
+		pass.HasRenderTexture() ? pass.GetColorRenderTextureCount() : 1,
 		pass.HasRenderTexture() ? pass.GetRenderPass() : swapChainRenderPass,
 		descriptorSetLayouts,
 		pass.HasRenderTexture() ? pass.GetExtent() : swapChainExtent,
@@ -1036,7 +1075,15 @@ void Renderer::CreatePipeline(
 		pass.GetShader(Shader::ShaderType::TessellationControlShader),
 		pass.GetShader(Shader::ShaderType::TessellationEvaluationShader),
 		pass.GetShader(Shader::ShaderType::GeometryShader),
-		pass.GetShader(Shader::ShaderType::FragmentShader)
+		pass.GetShader(Shader::ShaderType::FragmentShader),
+		pass.IsDepthTestEnabled(),
+		pass.IsDepthWriteEnabled(),
+		pass.IsStencilEnabled(),
+		pass.GetStencilCompareOp(),
+		pass.GetDepthFailOp(),
+		pass.GetStencilPassOp(),
+		pass.GetStencilFailOp(),
+		pass.GetStencilReference()
 	);
 }
 
@@ -1051,35 +1098,35 @@ void Renderer::RecordCommand(
 	glm::vec4 colorClear,
 	glm::vec2 depthStencilClear)
 {
-
 	bool customRenderTarget = pass.HasRenderTexture();
-	int rtCount = 0;
+	int rtColorCount = 0;
 
 	if (customRenderTarget)
 	{
 		//multiple render target is only available and meaningfull when rendering to render textures
 		//only under this situation can there be more than one color attachment
 		//color always comes before depth stencil
-		rtCount = pass.GetRenderTextureCount();
+		rtColorCount = pass.GetColorRenderTextureCount();
 	}
 	else
 	{
 		//when rendering to swapchain, only one color attachment will be cleared
 		//color always comes before depth stencil
-		rtCount = 1;
+		rtColorCount = 1;
 	}
 
 	std::vector<VkClearValue> clearValues;
-	if (pass.GetClear())
+	if (pass.IsClearEnabled())
 	{
 		//clear values
 		VkClearValue clearValue;
 		clearValue.color = { colorClear.r, colorClear.g, colorClear.b, colorClear.a };
-		clearValues.resize(rtCount + 1, clearValue);//only one depth stencil attachment will be present
-		clearValues[rtCount].depthStencil = { depthStencilClear.r, static_cast<uint32_t>(depthStencilClear.g) };
+		clearValues.resize(rtColorCount + 1, clearValue);//only one depth stencil attachment will be present
+		clearValues[rtColorCount].depthStencil = { depthStencilClear.r, static_cast<uint32_t>(depthStencilClear.g) };
 	}
+
 	//bind pass descriptor set
-	vkCmdBindDescriptorSets(commandBuffer, VK_PIPELINE_BIND_POINT_GRAPHICS, pipelineLayout, static_cast<uint32_t>(UNIFORM_SLOT::PASS), 1, pass.GetPassDescriptorSetPtr(), 0, nullptr);
+	vkCmdBindDescriptorSets(commandBuffer, VK_PIPELINE_BIND_POINT_GRAPHICS, pipelineLayout, static_cast<uint32_t>(UNIFORM_SLOT::Pass), 1, pass.GetPassDescriptorSetPtr(), 0, nullptr);
 
 	VkRenderPassBeginInfo renderPassInfo = {};
 	renderPassInfo.sType = VK_STRUCTURE_TYPE_RENDER_PASS_BEGIN_INFO;
@@ -1100,7 +1147,7 @@ void Renderer::RecordCommand(
 		VkBuffer vertexBuffers[] = { mesh->GetVertexBuffer() };
 		VkDeviceSize offsets[] = { 0 };
 		//bind object descriptor set
-		vkCmdBindDescriptorSets(commandBuffer, VK_PIPELINE_BIND_POINT_GRAPHICS, pipelineLayout, static_cast<uint32_t>(UNIFORM_SLOT::OBJECT), 1, mesh->GetObjectDescriptorSetPtr(), 0, nullptr);
+		vkCmdBindDescriptorSets(commandBuffer, VK_PIPELINE_BIND_POINT_GRAPHICS, pipelineLayout, static_cast<uint32_t>(UNIFORM_SLOT::Object), 1, mesh->GetObjectDescriptorSetPtr(), 0, nullptr);
 
 		//bind vbo
 		vkCmdBindVertexBuffers(commandBuffer, 0, 1, vertexBuffers, offsets);
@@ -1114,43 +1161,45 @@ void Renderer::RecordCommand(
 }
 
 void Renderer::RecordCommandNoEnd(
-	glm::vec4 colorClear,
-	glm::vec2 depthStencilClear,
 	Pass& pass,
 	VkCommandBuffer commandBuffer,
 	VkPipeline pipeline,
 	VkPipelineLayout pipelineLayout,
 	VkRenderPass renderPassFallback,
 	VkFramebuffer frameBufferFallback,
-	VkExtent2D extentFallback)
+	VkExtent2D extentFallback,
+	glm::vec4 colorClear,
+	glm::vec2 depthStencilClear)
 {
-
 	bool customRenderTarget = pass.HasRenderTexture();
-	int rtCount = 0;
+	int rtColorCount = 0;
 
-	//clear values
-	std::vector<VkClearValue> clearValues;
 	if (customRenderTarget)
 	{
 		//multiple render target is only available and meaningfull when rendering to render textures
 		//only under this situation can there be more than one color attachment
 		//color always comes before depth stencil
-		rtCount = pass.GetRenderTextureCount();
+		rtColorCount = pass.GetColorRenderTextureCount();
 	}
 	else
 	{
 		//when rendering to swapchain, only one color attachment will be cleared
 		//color always comes before depth stencil
-		rtCount = 1;
+		rtColorCount = 1;
 	}
 
-	VkClearValue clearValue;
-	clearValue.color = { colorClear.r, colorClear.g, colorClear.b, colorClear.a };
-	clearValues.resize(rtCount + 1, clearValue);//only one depth stencil attachment will be present
-	clearValues[rtCount].depthStencil = { depthStencilClear.r, static_cast<uint32_t>(depthStencilClear.g) };
+	std::vector<VkClearValue> clearValues;
+	if (pass.IsClearEnabled())
+	{
+		//clear values
+		VkClearValue clearValue;
+		clearValue.color = { colorClear.r, colorClear.g, colorClear.b, colorClear.a };
+		clearValues.resize(rtColorCount + 1, clearValue);//only one depth stencil attachment will be present
+		clearValues[rtColorCount].depthStencil = { depthStencilClear.r, static_cast<uint32_t>(depthStencilClear.g) };
+	}
 
 	//bind pass descriptor set
-	vkCmdBindDescriptorSets(commandBuffer, VK_PIPELINE_BIND_POINT_GRAPHICS, pipelineLayout, static_cast<int>(UNIFORM_SLOT::PASS), 1, pass.GetPassDescriptorSetPtr(), 0, nullptr);
+	vkCmdBindDescriptorSets(commandBuffer, VK_PIPELINE_BIND_POINT_GRAPHICS, pipelineLayout, static_cast<int>(UNIFORM_SLOT::Pass), 1, pass.GetPassDescriptorSetPtr(), 0, nullptr);
 
 	VkRenderPassBeginInfo renderPassInfo = {};
 	renderPassInfo.sType = VK_STRUCTURE_TYPE_RENDER_PASS_BEGIN_INFO;
@@ -1171,7 +1220,7 @@ void Renderer::RecordCommandNoEnd(
 		VkBuffer vertexBuffers[] = { mesh->GetVertexBuffer() };
 		VkDeviceSize offsets[] = { 0 };
 		//bind object descriptor set
-		vkCmdBindDescriptorSets(commandBuffer, VK_PIPELINE_BIND_POINT_GRAPHICS, pipelineLayout, static_cast<int>(UNIFORM_SLOT::OBJECT), 1, mesh->GetObjectDescriptorSetPtr(), 0, nullptr);
+		vkCmdBindDescriptorSets(commandBuffer, VK_PIPELINE_BIND_POINT_GRAPHICS, pipelineLayout, static_cast<int>(UNIFORM_SLOT::Object), 1, mesh->GetObjectDescriptorSetPtr(), 0, nullptr);
 
 		//bind vbo
 		vkCmdBindVertexBuffers(commandBuffer, 0, 1, vertexBuffers, offsets);
@@ -1576,6 +1625,12 @@ void Renderer::CleanUpSwapChain()
 
 	vkDestroyPipeline(device, shadowPipeline, nullptr);
 	vkDestroyPipelineLayout(device, shadowPipelineLayout, nullptr);
+
+	for (int i = 0; i < static_cast<int>(BLUR_TYPE::Count); i++)
+	{
+		vkDestroyPipeline(device, blurPipeline[i], nullptr);
+		vkDestroyPipelineLayout(device, blurPipelineLayout[i], nullptr);
+	}
 }
 
 void Renderer::CreateImageViews() 
@@ -1632,7 +1687,7 @@ void Renderer::CreateColorResources() {
 
 void Renderer::CreateDepthResources() 
 {
-	VkFormat depthFormat = FindDepthFormat();
+	VkFormat depthFormat = FindDepthStencilFormat();
 
 	CreateImage(
 		swapChainExtent.width, 
@@ -1646,14 +1701,17 @@ void Renderer::CreateDepthResources()
 		depthImage, 
 		depthImageMemory);
 
-	depthImageView = CreateImageView(depthImage, depthFormat, VK_IMAGE_ASPECT_DEPTH_BIT, 1);
+	VkImageAspectFlags aspectFlags = VK_IMAGE_ASPECT_DEPTH_BIT;
+	if (HasStencilComponent(depthFormat))
+		aspectFlags |= VK_IMAGE_ASPECT_STENCIL_BIT;
+	depthImageView = CreateImageView(depthImage, depthFormat, aspectFlags, 1);
 
 	TransitionImageLayout(defaultCommandPool, depthImage, depthFormat, VK_IMAGE_LAYOUT_UNDEFINED, VK_IMAGE_LAYOUT_DEPTH_STENCIL_ATTACHMENT_OPTIMAL, 1);
 }
 
-VkFormat Renderer::FindDepthFormat() {
+VkFormat Renderer::FindDepthStencilFormat() {
 	return FindSupportedFormat(
-		{ VK_FORMAT_D32_SFLOAT, VK_FORMAT_D32_SFLOAT_S8_UINT, VK_FORMAT_D24_UNORM_S8_UINT },
+		{ VK_FORMAT_D32_SFLOAT_S8_UINT, VK_FORMAT_D24_UNORM_S8_UINT },
 		VK_IMAGE_TILING_OPTIMAL,
 		VK_FORMAT_FEATURE_DEPTH_STENCIL_ATTACHMENT_BIT
 	);
@@ -1739,7 +1797,7 @@ void Renderer::CreateSwapChainRenderPass()
 	//because it will not be used after drawing has finished. 
 	//This may allow the hardware to perform additional optimizations.
 	VkAttachmentDescription depthAttachment = {};
-	depthAttachment.format = FindDepthFormat();
+	depthAttachment.format = FindDepthStencilFormat();
 	depthAttachment.samples = swapChainMsaaSamples;
 	depthAttachment.loadOp = VK_ATTACHMENT_LOAD_OP_CLEAR;
 	depthAttachment.storeOp = VK_ATTACHMENT_STORE_OP_DONT_CARE;
@@ -1775,14 +1833,32 @@ void Renderer::CreateSwapChainRenderPass()
 	subpass.pDepthStencilAttachment = &depthAttachmentRef;
 	subpass.pResolveAttachments = &colorAttachmentResolveRef;
 
-	VkSubpassDependency dependency = {};
-	dependency.srcSubpass = VK_SUBPASS_EXTERNAL;
-	dependency.dstSubpass = 0;
-	dependency.srcStageMask = VK_PIPELINE_STAGE_COLOR_ATTACHMENT_OUTPUT_BIT;
-	dependency.srcAccessMask = 0;
-	dependency.dstStageMask = VK_PIPELINE_STAGE_COLOR_ATTACHMENT_OUTPUT_BIT;
-	dependency.dstAccessMask = VK_ACCESS_COLOR_ATTACHMENT_READ_BIT | VK_ACCESS_COLOR_ATTACHMENT_WRITE_BIT;
-
+	//https://vulkan.lunarg.com/doc/view/1.0.37.0/linux/vkspec.chunked/ch07s01.html#VkSubpassDependency
+	VkSubpassDependency dependency[2];
+	//If there is no subpass dependency from VK_SUBPASS_EXTERNAL to the first subpass that uses an attachment, then an implicit subpass dependency exists from VK_SUBPASS_EXTERNAL to the first subpass it is used in.The subpass dependency operates as if defined with the following parameters :
+	dependency[0].srcSubpass = VK_SUBPASS_EXTERNAL;
+	dependency[0].dstSubpass = 0; // First subpass attachment is used in
+	dependency[0].srcStageMask = VK_PIPELINE_STAGE_TOP_OF_PIPE_BIT;
+	dependency[0].dstStageMask = VK_PIPELINE_STAGE_ALL_GRAPHICS_BIT;// VK_PIPELINE_STAGE_ALL_COMMANDS_BIT;
+	dependency[0].srcAccessMask = 0;
+	dependency[0].dstAccessMask = VK_ACCESS_INPUT_ATTACHMENT_READ_BIT |
+		VK_ACCESS_COLOR_ATTACHMENT_READ_BIT |
+		VK_ACCESS_COLOR_ATTACHMENT_WRITE_BIT |
+		VK_ACCESS_DEPTH_STENCIL_ATTACHMENT_READ_BIT |
+		VK_ACCESS_DEPTH_STENCIL_ATTACHMENT_WRITE_BIT;
+	dependency[0].dependencyFlags = 0;
+	//Similarly, if there is no subpass dependency from the last subpass that uses an attachment to VK_SUBPASS_EXTERNAL, then an implicit subpass dependency exists from the last subpass it is used in to VK_SUBPASS_EXTERNAL.The subpass dependency operates as if defined with the following parameters :
+	dependency[1].srcSubpass = 0; // Last subpass attachment is used in
+	dependency[1].dstSubpass = VK_SUBPASS_EXTERNAL;
+	dependency[1].srcStageMask = VK_PIPELINE_STAGE_ALL_GRAPHICS_BIT;// VK_PIPELINE_STAGE_ALL_COMMANDS_BIT;
+	dependency[1].dstStageMask = VK_PIPELINE_STAGE_BOTTOM_OF_PIPE_BIT;
+	dependency[1].srcAccessMask = VK_ACCESS_INPUT_ATTACHMENT_READ_BIT |
+		VK_ACCESS_COLOR_ATTACHMENT_READ_BIT |
+		VK_ACCESS_COLOR_ATTACHMENT_WRITE_BIT |
+		VK_ACCESS_DEPTH_STENCIL_ATTACHMENT_READ_BIT |
+		VK_ACCESS_DEPTH_STENCIL_ATTACHMENT_WRITE_BIT;
+	dependency[1].dstAccessMask = 0;
+	dependency[1].dependencyFlags = 0;
 	std::array<VkAttachmentDescription, 3> attachments = { colorAttachment, depthAttachment, colorAttachmentResolve };
 	VkRenderPassCreateInfo renderPassInfo = {};
 	renderPassInfo.sType = VK_STRUCTURE_TYPE_RENDER_PASS_CREATE_INFO;
@@ -1790,8 +1866,8 @@ void Renderer::CreateSwapChainRenderPass()
 	renderPassInfo.pAttachments = attachments.data();
 	renderPassInfo.subpassCount = 1;
 	renderPassInfo.pSubpasses = &subpass;
-	renderPassInfo.dependencyCount = 1;
-	renderPassInfo.pDependencies = &dependency;
+	renderPassInfo.dependencyCount = _countof(dependency);
+	renderPassInfo.pDependencies = dependency;
 
 	if (vkCreateRenderPass(device, &renderPassInfo, nullptr, &swapChainRenderPass) != VK_SUCCESS) {
 		throw std::runtime_error("failed to create render pass!");

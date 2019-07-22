@@ -25,10 +25,7 @@ void main()
 	vec3 normalWorldAsColor = normalWorld * 0.5 + 0.5;
 	vec3 albedo = texture(texSamplerColor, uv).rgb;
 	
-	if(sceneUBO.offscreenMode == 0)
-		outDiffuse = vec4(albedo, 1.0);
-	else if(sceneUBO.offscreenMode == 1)
-		outDiffuse = vec4(normal, 1.0);
+	outDiffuse = vec4(albedo, gl_FragCoord.z);
 
 	vec3 specularTotal = vec3(0, 0, 0);
 	for(uint i = 0;i<sceneUBO.lightCount;i++)
@@ -48,8 +45,5 @@ void main()
 				lightTextureArray[sceneUBO.lightArr[i].textureIndex]);
 	}
 
-	if(sceneUBO.offscreenMode == 0)
-		outSpecular = vec4(normalWorldAsColor, 1.0);
-	else if(sceneUBO.offscreenMode == 1)
-		outSpecular = vec4(specularTotal, 1.0);
+	outSpecular = vec4(specularTotal, 1.0);
 }

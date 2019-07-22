@@ -36,7 +36,7 @@ public:
 
 	// ~ utility ~
 
-	VkFormat FindDepthFormat();
+	VkFormat FindDepthStencilFormat();
 	VkSampleCountFlagBits FindMaxUsableSampleCount();
 
 	// ~ clean up ~
@@ -165,7 +165,7 @@ public:
 	void CreatePipeline(
 		VkPipeline& pipeline,
 		VkPipelineLayout& pipelineLayout,
-		uint32_t renderTargetCount,
+		uint32_t colorRenderTargetCount,
 		VkRenderPass renderPass,
 		const std::vector<VkDescriptorSetLayout>& descriptorSetLayout,
 		VkExtent2D extent,
@@ -174,7 +174,15 @@ public:
 		Shader* pTesCtrlShader,
 		Shader* pTesEvalShader,
 		Shader* pGeomShader,
-		Shader* pFragShader);
+		Shader* pFragShader,
+		bool enableDepthTest = true,
+		bool enableDepthWrite = true,
+		bool enableStencil = false,
+		VkCompareOp stencilCompareOp = VK_COMPARE_OP_ALWAYS,
+		VkStencilOp depthFailOp = VK_STENCIL_OP_KEEP,
+		VkStencilOp stencilPassOp = VK_STENCIL_OP_KEEP,
+		VkStencilOp stencilFailOp = VK_STENCIL_OP_KEEP,
+		uint32_t stencilReference = 0);
 
 	void CreatePipeline(
 		VkPipeline& pipeline,
@@ -194,15 +202,15 @@ public:
 		glm::vec2 depthStencilClear = glm::vec2(1.0f, 0.0f));
 
 	void RecordCommandNoEnd(
-		glm::vec4 colorClear,
-		glm::vec2 depthStencilClear,
 		Pass& pass,
 		VkCommandBuffer commandBuffer,
 		VkPipeline pipeline,
 		VkPipelineLayout pipelineLayout,
 		VkRenderPass renderPassFallback,
 		VkFramebuffer frameBufferFallback,
-		VkExtent2D extentFallback);
+		VkExtent2D extentFallback,
+		glm::vec4 colorClear = glm::vec4(0.0f, 0.0f, 0.0f, 0.0f),
+		glm::vec2 depthStencilClear = glm::vec2(1.0f, 0.0f));
 
 	void RecordCommandEnd(VkCommandBuffer commandBuffer);
 
@@ -246,10 +254,15 @@ public:
 	VkPipeline standardPipeline;
 	VkPipelineLayout standardPipelineLayout;
 
-	// ~ shadow mapping resources ~
+	// ~ shadow mapping pipeline resources ~
 
 	VkPipeline shadowPipeline;
 	VkPipelineLayout shadowPipelineLayout;
+
+	// ~ blur pipeline resources ~
+
+	VkPipeline blurPipeline[static_cast<int>(BLUR_TYPE::Count)];
+	VkPipelineLayout blurPipelineLayout[static_cast<int>(BLUR_TYPE::Count)];
 
 private:
 

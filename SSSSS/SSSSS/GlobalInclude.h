@@ -15,8 +15,8 @@
 #include <vulkan/vulkan.h>
 
 const uint32_t MAX_LIGHTS_PER_SCENE = 10;
-
-enum class UNIFORM_SLOT { SCENE, FRAME, PASS, OBJECT, COUNT };
+enum class BLUR_TYPE { Horizontal, Vertical, Count };
+enum class UNIFORM_SLOT { Scene, Frame, Pass, Object, Count };
 
 struct LightData {
 	glm::mat4 view = glm::mat4(1);
@@ -32,13 +32,13 @@ struct LightData {
 //stored in scene
 struct SceneUniformBufferObject {
 	uint32_t time = 0;
-	uint32_t offscreenMode = 0;
 	uint32_t deferredMode = 0;
 	uint32_t lightCount = 0;
-	float m = 0.0f;
-	float rho_s = 0.0f;
+	float m = 0.0f;//roughness
+	float rho_s = 0.0f;//specularity factor
 	float stretchAlpha = 0.0f;
 	float stretchBeta = 0.0f;
+	uint32_t PADDING0 = 0;
 	LightData lightArr[MAX_LIGHTS_PER_SCENE];
 };
 
@@ -48,8 +48,8 @@ struct PassUniformBufferObject {
 	glm::mat4 proj = glm::mat4(1);
 	glm::vec4 cameraPosition = glm::vec4(0);
 	uint32_t passNum = 0;
-	uint32_t widthRT = 0;//if multiple render targets are presented, only use the first one's width
-	uint32_t heightRT = 0;//if multiple render targets are presented, only use the first one's height
+	uint32_t widthTex = 0;//if multiple textures are presented, only use the first one's width
+	uint32_t heightTex = 0;//if multiple textures are presented, only use the first one's height
 };
 
 //stored in mesh

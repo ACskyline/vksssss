@@ -36,7 +36,7 @@ protected:
 
 	// ~ vulkan functions ~
 
-	void CreateTextureImageView();
+	void CreateTextureImageView(VkImage image, VkFormat format, VkImageAspectFlags aspectFlags);
 	void CreateTextureSampler();
 
 private:
@@ -45,10 +45,15 @@ private:
 	void CreateTextureImage();
 };
 
+////////////////////////////////
+//////// Render Texture ////////
+////////////////////////////////
+
 class RenderTexture : public Texture
 {
 public:
-	RenderTexture(const std::string& _name, int _width, int _height, uint32_t _mipLevels, VkFormat _colorFormat, bool _supportDepth, bool _supportMsaa);
+	//RenderTexture();
+	RenderTexture(const std::string& _name, int _width, int _height, uint32_t _mipLevels, VkFormat _colorFormat, bool _supportColor, bool _supportDepthStencil, bool _supportMsaa);
 	virtual ~RenderTexture();
 
 	void virtual InitTexture(Renderer* _pRenderer);
@@ -62,28 +67,34 @@ public:
 	VkImageView GetColorImageView() const;
 	VkImageView GetDepthImageView() const;
 	VkImageView GetPreResolveImageView() const;
-	bool SupportDepth();
+	bool SupportColor();
+	bool SupportDepthStencil();
 	bool SupportMsaa();
 
-	void TransitionLayoutToWrite(VkCommandBuffer commandBuffer);
-	void TransitionLayoutToRead(VkCommandBuffer commandBuffer);
+	void TransitionColorLayoutToWrite(VkCommandBuffer commandBuffer);
+	void TransitionColorLayoutToRead(VkCommandBuffer commandBuffer);
+
+	void TransitionDepthStencilLayoutToWrite(VkCommandBuffer commandBuffer);
+	void TransitionDepthStencilLayoutToRead(VkCommandBuffer commandBuffer);
 
 private:
 
 	// ~ color buffer ~
 
+	bool supportColor;
 	//VkImage colorImage; //use textureImage instead
 	//VkDeviceMemory colorImageMemory; //use textureImageMemory instead
 	VkImageView colorImageView;
-	VkImageLayout currentLayout;
+	VkImageLayout currentColorLayout;
 
 	// ~ depth buffer ~
 
-	bool supportDepth;
-	VkImage depthImage;
-	VkDeviceMemory depthImageMemory;
-	VkImageView depthImageView; 
-	VkFormat depthFormat;
+	bool supportDepthStencil;
+	VkImage depthStencilImage;
+	VkDeviceMemory depthStencilImageMemory;
+	VkImageView depthStencilImageView; 
+	VkFormat depthStencilFormat;
+	VkImageLayout currentDepthStencilLayout;
 
 	// ~ resolve buffer ~
 

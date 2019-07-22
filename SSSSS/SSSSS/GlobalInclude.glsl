@@ -27,13 +27,13 @@ struct LightData {
 
 layout(set = SCENE_SET, binding = UBO_SLOT(SCENE, 0)) uniform SceneUniformBufferObject {
     uint time;
-	uint offscreenMode;
 	uint deferredMode;
 	uint lightCount;
 	float m;
 	float rho_s;
 	float stretchAlpha;
 	float stretchBeta;
+	uint PADDING0;
 	LightData lightArr[MAX_LIGHTS_PER_SCENE];
 } sceneUBO;
 
@@ -42,8 +42,8 @@ layout(set = PASS_SET, binding = UBO_SLOT(PASS, 0)) uniform PassUniformBufferObj
 	mat4 proj;
 	vec4 cameraPosition;
 	uint passNum;
-	uint widthRT;
-	uint heightRT;
+	uint widthTex;
+	uint heightTex;
 } passUBO;
 
 layout(set = OBJECT_SET, binding = UBO_SLOT(OBJECT, 0)) uniform ObjectUniformBufferObject {

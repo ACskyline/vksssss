@@ -13,7 +13,15 @@ class RenderTexture;
 class Pass
 {
 public:
-	Pass(const std::string& _name, bool _clear);
+	Pass(const std::string& _name, bool _clear,
+		bool _enableDepthTest = true,
+		bool _enableDepthWrite = true,
+		bool _enableStencil = false,
+		VkCompareOp _stencilCompareOp = VK_COMPARE_OP_ALWAYS,
+		VkStencilOp _depthFailOp = VK_STENCIL_OP_KEEP,
+		VkStencilOp _stencilPassOp = VK_STENCIL_OP_KEEP,
+		VkStencilOp _stencilFailOp = VK_STENCIL_OP_KEEP,
+		uint32_t _stencilReference = 0);
 	~Pass();
 
 	void AddMesh(Mesh* pMesh);
@@ -23,7 +31,17 @@ public:
 	void AddShader(Shader* pShader);
 	void SetScene(Scene* _pScene);
 
-	bool GetClear() const;
+	bool IsClearEnabled() const;
+	bool IsDepthTestEnabled() const;
+	bool IsDepthWriteEnabled() const;
+	bool IsStencilEnabled() const;
+	VkCompareOp GetStencilCompareOp() const;
+	VkStencilOp GetDepthFailOp() const;
+	VkStencilOp GetStencilPassOp() const;
+	VkStencilOp GetStencilFailOp() const;
+	uint32_t GetStencilReference() const;
+	uint32_t GetTextureCount() const;
+	int GetColorRenderTextureCount() const;
 	int GetRenderTextureCount() const;
 	bool HasRenderTexture() const;
 	VkSampleCountFlagBits GetMsaaSamples() const;
@@ -69,6 +87,14 @@ private:
 	Scene* pScene;
 	std::string name;
 	bool clear;
+	bool enableDepthTest;
+	bool enableDepthWrite;
+	bool enableStencil;
+	VkCompareOp stencilCompareOp;
+	VkStencilOp depthFailOp;
+	VkStencilOp stencilPassOp;
+	VkStencilOp stencilFailOp;
+	uint32_t stencilReference;
 	const uint32_t pUboCount = 1;
 
 	//asset containers

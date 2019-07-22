@@ -5,8 +5,24 @@
 #include "Mesh.h"
 #include "Renderer.h"
 
-Pass::Pass(const std::string& _name, bool _clear) :
-	pRenderer(nullptr), pScene(nullptr), pCamera(nullptr), name(_name), clear(_clear)
+Pass::Pass(const std::string& _name, bool _clear,
+	bool _enableDepthTest,
+	bool _enableDepthWrite,
+	bool _enableStencil,
+	VkCompareOp _stencilCompareOp,
+	VkStencilOp _depthFailOp,
+	VkStencilOp _stencilPassOp,
+	VkStencilOp _stencilFailOp,
+	uint32_t _stencilReference) :
+	pRenderer(nullptr), pScene(nullptr), pCamera(nullptr), name(_name), clear(_clear),
+	enableDepthTest(_enableDepthTest),
+	enableDepthWrite(_enableDepthWrite),
+	enableStencil(_enableStencil),
+	stencilCompareOp(_stencilCompareOp),
+	depthFailOp(_depthFailOp),
+	stencilPassOp(_stencilPassOp),
+	stencilFailOp(_stencilFailOp),
+	stencilReference(_stencilReference)
 {
 	for (auto& pShader : pShaderArr)
 		pShader = nullptr;
@@ -47,9 +63,60 @@ void Pass::AddShader(Shader* pShader)
 	pShaderArr[static_cast<int>(pShader->GetShaderType())] = pShader;
 }
 
-bool Pass::GetClear() const
+bool Pass::IsClearEnabled() const
 {
 	return clear;
+}
+
+bool Pass::IsDepthTestEnabled() const
+{
+	return enableDepthTest;
+}
+
+bool Pass::IsDepthWriteEnabled() const
+{
+	return enableDepthWrite;
+}
+
+bool Pass::IsStencilEnabled() const
+{
+	return enableStencil;
+}
+
+VkCompareOp Pass::GetStencilCompareOp() const
+{
+	return stencilCompareOp;
+}
+
+VkStencilOp Pass::GetDepthFailOp() const
+{
+	return depthFailOp;
+}
+
+VkStencilOp Pass::GetStencilPassOp() const
+{
+	return stencilPassOp;
+}
+
+VkStencilOp Pass::GetStencilFailOp() const
+{
+	return stencilFailOp;
+}
+
+uint32_t Pass::GetStencilReference() const
+{
+	return stencilReference;
+}
+
+int Pass::GetColorRenderTextureCount() const
+{
+	int n = 0;
+	for (auto& pRT : pRenderTextureVec)
+	{
+		if (pRT->SupportColor())
+			n++;
+	}
+	return n;
 }
 
 int Pass::GetRenderTextureCount() const
@@ -77,6 +144,11 @@ VkSampleCountFlagBits Pass::GetMsaaSamples() const
 		}
 	}
 	return VK_SAMPLE_COUNT_1_BIT;
+}
+
+uint32_t Pass::GetTextureCount() const
+{
+	return static_cast<uint32_t>(pTextureVec.size());
 }
 
 uint32_t Pass::GetUboCount() const
@@ -215,10 +287,10 @@ void Pass::InitPass(
 	//renderPass, extent and framebuffer
 	if (pRenderTextureVec.size() > 0)
 	{
-		std::vector<VkAttachmentDescription> colorAttachments(pRenderTextureVec.size());
+		std::vector<VkAttachmentDescription> colorAttachments;
 		std::vector<VkAttachmentDescription> depthAttachments;
 		std::vector<VkAttachmentDescription> preResolveAttachments;
-		std::vector<VkImageView> colorViews(pRenderTextureVec.size());
+		std::vector<VkImageView> colorViews;
 		std::vector<VkImageView> depthViews;
 		std::vector<VkImageView> preResolveViews;
 		int widthMax = 0;
@@ -228,10 +300,13 @@ void Pass::InitPass(
 			if (widthMax < pRenderTextureVec[i]->GetWidth()) widthMax = pRenderTextureVec[i]->GetWidth();
 			if (heightMax < pRenderTextureVec[i]->GetHeight()) heightMax = pRenderTextureVec[i]->GetHeight();
 
-			colorAttachments[i] = pRenderTextureVec[i]->GetColorAttachment(clear);
-			colorViews[i] = pRenderTextureVec[i]->GetColorImageView();
+			if (pRenderTextureVec[i]->SupportColor())
+			{
+				colorAttachments.push_back(pRenderTextureVec[i]->GetColorAttachment(clear));
+				colorViews.push_back(pRenderTextureVec[i]->GetColorImageView());
+			}
 
-			if (pRenderTextureVec[i]->SupportDepth())
+			if (pRenderTextureVec[i]->SupportDepthStencil())
 			{
 				depthAttachments.push_back(pRenderTextureVec[i]->GetDepthAttachment(clear));
 				depthViews.push_back(pRenderTextureVec[i]->GetDepthImageView());
@@ -255,65 +330,9 @@ void Pass::InitPass(
 	}
 }
 
-//void Pass::RecreateFramebuffer()
-//{
-//	//release the last one
-//	vkDestroyFramebuffer(pRenderer->GetDevice(), framebuffer, nullptr);
-//
-//	if (pRenderTextureVec.size() > 0)
-//	{
-//		//create a new one
-//		std::vector<VkAttachmentDescription> colorAttachments(pRenderTextureVec.size());
-//		std::vector<VkAttachmentDescription> depthAttachments;
-//		std::vector<VkAttachmentDescription> preResolveAttachments;
-//		std::vector<VkImageView> colorViews(pRenderTextureVec.size());
-//		std::vector<VkImageView> depthViews;
-//		std::vector<VkImageView> preResolveViews;
-//		int widthMax = 0;
-//		int heightMax = 0;
-//		for (int i = 0; i < pRenderTextureVec.size(); i++)
-//		{
-//			if (widthMax < pRenderTextureVec[i]->GetWidth()) widthMax = pRenderTextureVec[i]->GetWidth();
-//			if (heightMax < pRenderTextureVec[i]->GetHeight()) heightMax = pRenderTextureVec[i]->GetHeight();
-//
-//			colorAttachments[i] = pRenderTextureVec[i]->GetColorAttachment();
-//			colorViews[i] = pRenderTextureVec[i]->GetColorImageView();
-//
-//			if (pRenderTextureVec[i]->SupportDepth())
-//			{
-//				depthAttachments.push_back(pRenderTextureVec[i]->GetDepthAttachment());
-//				depthViews.push_back(pRenderTextureVec[i]->GetDepthImageView());
-//			}
-//
-//			if (pRenderTextureVec[i]->SupportMsaa())
-//			{
-//				preResolveAttachments.push_back(pRenderTextureVec[i]->GetPreResolveAttachment());
-//				preResolveViews.push_back(pRenderTextureVec[i]->GetPreResolveImageView());
-//			}
-//		}
-//		extent.height = heightMax;
-//		extent.width = widthMax;
-//		pRenderer->CreateRenderPass(renderPass, preResolveAttachments, depthAttachments, colorAttachments);
-//		pRenderer->CreateFramebuffer(framebuffer, preResolveViews, depthViews, colorViews, renderPass, widthMax, heightMax);
-//	}
-//}
-//
-//void Pass::ChangeRenderTexture(uint32_t slot, RenderTexture* pRenderTexture)
-//{
-//	pRenderTextureVec[slot] = pRenderTexture;
-//}
-
 void Pass::UpdatePassUniformBuffer()
 {
-	pUBO.view = pCamera->GetViewMatrix();
-	pUBO.proj = pCamera->GetProjectionMatrix();
-	pUBO.cameraPosition = glm::vec4(pCamera->position, 1.0);
-	pUBO.passNum = 100;
-
-	void* data;
-	vkMapMemory(pRenderer->GetDevice(), passUniformBufferMemory, 0, sizeof(pUBO), 0, &data);
-	memcpy(data, &pUBO, sizeof(pUBO));
-	vkUnmapMemory(pRenderer->GetDevice(), passUniformBufferMemory);
+	UpdatePassUniformBuffer(pCamera);
 }
 
 void Pass::CreatePassUniformBuffer()
@@ -349,6 +368,8 @@ void Pass::UpdatePassUniformBuffer(Camera* _pCamera)
 	pUBO.proj = _pCamera->GetProjectionMatrix();
 	pUBO.cameraPosition = glm::vec4(_pCamera->position, 1.0);
 	pUBO.passNum = 100;
+	pUBO.widthTex = pTextureVec.size() > 0 ? pTextureVec[0]->GetWidth() : 0;
+	pUBO.heightTex = pTextureVec.size() > 0 ? pTextureVec[0]->GetHeight() : 0;
 
 	void* data;
 	vkMapMemory(pRenderer->GetDevice(), passUniformBufferMemory, 0, sizeof(pUBO), 0, &data);
