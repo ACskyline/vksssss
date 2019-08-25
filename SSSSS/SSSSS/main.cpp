@@ -24,51 +24,52 @@ const int WIDTH_SHADOW_MAP = 800;
 const int HEIGHT_SHADOW_MAP = 800;
 const int MAX_FRAMES_IN_FLIGHT = 2;//3 in total
 const int MAX_BLUR_COUNT = 6;
+const uint32_t SKIN_STENCIL_VALUE = 1;
 
 Renderer mRenderer(WIDTH, HEIGHT, MAX_FRAMES_IN_FLIGHT);
 Level mLevel("default level");
 Scene mScene("default scene");
 Pass mPassDeferred("deferred pass", true);
-Pass mPassSkin("skin pass", true);
-Pass mPassStandard("standard pass", false);
+Pass mPassSkin("skin pass", true, true, true, true, true, true, VK_COMPARE_OP_ALWAYS, VK_STENCIL_OP_KEEP, VK_STENCIL_OP_KEEP, VK_STENCIL_OP_REPLACE, SKIN_STENCIL_VALUE);
+//Pass mPassStandard("standard pass", false);
 Pass mPassShadowRed("shadow pass red", true);
 Pass mPassShadowGreen("shadow pass green", true);
 Pass mPassShadowBlue("shadow pass blue", true);
-std::vector<std::vector<Pass>> mPassBlurVec(static_cast<int>(BLUR_TYPE::Count), std::vector<Pass>(MAX_BLUR_COUNT, Pass("blur", true)));//new, [BLUR_TYPE][BLUR_COUNT]
+std::vector<std::vector<Pass>> mPassBlurVec(static_cast<int>(BLUR_TYPE::Count), std::vector<Pass>(MAX_BLUR_COUNT, Pass("blur", true, false, false, false, false, true, VK_COMPARE_OP_EQUAL, VK_STENCIL_OP_KEEP, VK_STENCIL_OP_KEEP, VK_STENCIL_OP_KEEP, SKIN_STENCIL_VALUE)));//[BLUR_TYPE][BLUR_COUNT]
 Shader mVertShaderSkin(Shader::ShaderType::VertexShader, "skin.vert");
 Shader mFragShaderSkin(Shader::ShaderType::FragmentShader, "skin.frag");
-Shader mVertShaderStandard(Shader::ShaderType::VertexShader, "standard.vert");
-Shader mFragShaderStandard(Shader::ShaderType::FragmentShader, "standard.frag");
+//Shader mVertShaderStandard(Shader::ShaderType::VertexShader, "standard.vert");
+//Shader mFragShaderStandard(Shader::ShaderType::FragmentShader, "standard.frag");
 Shader mVertShaderDeferred(Shader::ShaderType::VertexShader, "deferred.vert");
 Shader mFragShaderDeferred(Shader::ShaderType::FragmentShader, "deferred.frag");
 Shader mVertShaderShadow(Shader::ShaderType::VertexShader, "shadow.vert");
-Shader mFragShaderBlurH(Shader::ShaderType::FragmentShader, "blurh.frag");//new
-Shader mFragShaderBlurV(Shader::ShaderType::FragmentShader, "blurv.frag");//new
+Shader mFragShaderBlurH(Shader::ShaderType::FragmentShader, "blurh.frag");
+Shader mFragShaderBlurV(Shader::ShaderType::FragmentShader, "blurv.frag");
 Camera mCameraDeferred("deferred camera", glm::vec3(0, 0, 2), glm::vec3(0, 0, 0), glm::vec3(0, 1, 0), 45.f, WIDTH, HEIGHT, 0.1f, 50.f);
-Camera mCameraRedLight("red light camera", glm::vec3(3, 0, 0), glm::vec3(0, 0, 0), glm::vec3(0, 1, 0), 45.f, WIDTH_SHADOW_MAP, HEIGHT_SHADOW_MAP, 0.1f, 50.f);
-Camera mCameraGreenLight("green light camera", glm::vec3(0, 3, 0), glm::vec3(0, 0, 0), glm::vec3(1, 0, 0), 45.f, WIDTH_SHADOW_MAP, HEIGHT_SHADOW_MAP, 0.1f, 50.f);
-Camera mCameraBlueLight("blue light camera", glm::vec3(0, 0, 3), glm::vec3(0, 0, 0), glm::vec3(0, 1, 0), 45.f, WIDTH_SHADOW_MAP, HEIGHT_SHADOW_MAP, 0.1f, 50.f);
+Camera mCameraRedLight("red light camera", glm::vec3(5, 0, 0), glm::vec3(0, 0, 0), glm::vec3(0, 1, 0), 45.f, WIDTH_SHADOW_MAP, HEIGHT_SHADOW_MAP, 0.1f, 50.f);
+Camera mCameraGreenLight("green light camera", glm::vec3(0, 5, 0), glm::vec3(0, 0, 0), glm::vec3(1, 0, 0), 45.f, WIDTH_SHADOW_MAP, HEIGHT_SHADOW_MAP, 0.1f, 50.f);
+Camera mCameraBlueLight("blue light camera", glm::vec3(0, 0, 5), glm::vec3(0, 0, 0), glm::vec3(0, 1, 0), 45.f, WIDTH_SHADOW_MAP, HEIGHT_SHADOW_MAP, 0.1f, 50.f);
 OrbitCamera mCameraOffscreen("offscreen camera", 3, 45.f, 45.f, glm::vec3(0, 0, 0), glm::vec3(0, 1, 0), 45.f, WIDTH_RT, HEIGHT_RT, 0.1f, 50.f);
 OrbitCamera* pCurrentOrbitCamera = &mCameraOffscreen;
-Mesh mMeshHead("head.obj", Mesh::MeshType::File, glm::vec3(0, 0, 0), glm::vec3(0, 0, 0), glm::vec3(1, 1, 1));
-Mesh mMeshSquareX("square x", Mesh::MeshType::Square, glm::vec3(-3, 0, 0), glm::vec3(0, 90, 0), glm::vec3(6, 6, 1));
-Mesh mMeshSquareY("square y", Mesh::MeshType::Square, glm::vec3(0, -3, 0), glm::vec3(-90, 0, 0), glm::vec3(6, 6, 1));
-Mesh mMeshSquareZ("square z", Mesh::MeshType::Square, glm::vec3(0, 0, -3), glm::vec3(0, 0, 0), glm::vec3(6, 6, 1));
+Mesh mMeshHead("head_smooth.obj", Mesh::MeshType::File, glm::vec3(0, 0, 0), glm::vec3(0, 0, 0), glm::vec3(1, 1, 1));
+//Mesh mMeshSquareX("square x", Mesh::MeshType::Square, glm::vec3(-3, 0, 0), glm::vec3(0, 90, 0), glm::vec3(6, 6, 1));
+//Mesh mMeshSquareY("square y", Mesh::MeshType::Square, glm::vec3(0, -3, 0), glm::vec3(-90, 0, 0), glm::vec3(6, 6, 1));
+//Mesh mMeshSquareZ("square z", Mesh::MeshType::Square, glm::vec3(0, 0, -3), glm::vec3(0, 0, 0), glm::vec3(6, 6, 1));
 Mesh mMeshFullScreenQuad("quad", Mesh::MeshType::FullScreenQuad, glm::vec3(0, 0, 0), glm::vec3(0, 0, 0), glm::vec3(1, 1, 1));
-Texture mTextureColorSkin("head_color.jpg", VK_FORMAT_R8G8B8A8_UNORM);
-Texture mTextureNormalSkin("head_normal.jpg", VK_FORMAT_R8G8B8A8_UNORM);
-Texture mTextureColorBrick("brick_color.png", VK_FORMAT_R8G8B8A8_UNORM);
-Texture mTextureNormalBrick("brick_normal.png", VK_FORMAT_R8G8B8A8_UNORM);
-RenderTexture mRenderTextureDiffuse("diffuse rt", WIDTH_RT, HEIGHT_RT, 1, VK_FORMAT_R8G8B8A8_UNORM, true, false, false);
-RenderTexture mRenderTextureSpecular("specular rt", WIDTH_RT, HEIGHT_RT, 1, VK_FORMAT_R8G8B8A8_UNORM, true, false, false);
-RenderTexture mRenderTextureDepth("depth rt", WIDTH_RT, HEIGHT_RT, 1, VK_FORMAT_R8G8B8A8_UNORM, false, true, false);//new
-RenderTexture mRenderTextureRedLight("red light rt", WIDTH_SHADOW_MAP, HEIGHT_SHADOW_MAP, 1, VK_FORMAT_UNDEFINED, false, true, false);
-RenderTexture mRenderTextureGreenLight("green light rt", WIDTH_SHADOW_MAP, HEIGHT_SHADOW_MAP, 1, VK_FORMAT_UNDEFINED, false, true, false);
-RenderTexture mRenderTextureBlueLight("blue light rt", WIDTH_SHADOW_MAP, HEIGHT_SHADOW_MAP, 1, VK_FORMAT_UNDEFINED, false, true, false);
-std::vector<std::vector<RenderTexture>> mRenderTextureBlurVec(static_cast<int>(BLUR_TYPE::Count), std::vector<RenderTexture>(MAX_BLUR_COUNT, RenderTexture("blur", WIDTH_RT, HEIGHT_RT, 1, VK_FORMAT_R8G8B8A8_UNORM, true, false, false)));//new, [BLUR_TYPE][BLUR_COUNT]
-Light mLightRed("light red", glm::vec3(1, 0, 0), glm::vec3(3, 0, 0), &mCameraRedLight, &mRenderTextureRedLight);
-Light mLightGreen("light green", glm::vec3(0, 1, 0), glm::vec3(0, 3, 0), &mCameraGreenLight, &mRenderTextureGreenLight);
-Light mLightBlue("light blue", glm::vec3(0, 0, 1), glm::vec3(0, 0, 3), &mCameraBlueLight, &mRenderTextureBlueLight);
+Texture mTextureColorSkin("head_color.jpg", VK_FORMAT_R8G8B8A8_UNORM, Texture::Filter::Trilinear, Texture::Wrap::Clamp);
+Texture mTextureNormalSkin("head_normal.jpg", VK_FORMAT_R8G8B8A8_UNORM, Texture::Filter::Trilinear, Texture::Wrap::Clamp);
+Texture mTextureColorBrick("brick_color.png", VK_FORMAT_R8G8B8A8_UNORM, Texture::Filter::Trilinear, Texture::Wrap::Clamp);
+Texture mTextureNormalBrick("brick_normal.png", VK_FORMAT_R8G8B8A8_UNORM, Texture::Filter::Trilinear, Texture::Wrap::Clamp);
+RenderTexture mRenderTextureDiffuse("diffuse rt", WIDTH_RT, HEIGHT_RT, VK_FORMAT_R8G8B8A8_UNORM, Texture::Filter::Bilinear, Texture::Wrap::Clamp, true, false, false, RenderTexture::ReadFrom::Color);
+RenderTexture mRenderTextureSpecular("specular rt", WIDTH_RT, HEIGHT_RT, VK_FORMAT_R8G8B8A8_UNORM, Texture::Filter::Bilinear, Texture::Wrap::Clamp, true, false, false, RenderTexture::ReadFrom::Color);
+RenderTexture mRenderTextureDepthStencil("depthStencil rt", WIDTH_RT, HEIGHT_RT, VK_FORMAT_R8G8B8A8_UNORM, Texture::Filter::Bilinear, Texture::Wrap::Clamp, false, true, false, RenderTexture::ReadFrom::None);
+RenderTexture mRenderTextureRedLight("red light rt", WIDTH_SHADOW_MAP, HEIGHT_SHADOW_MAP, VK_FORMAT_UNDEFINED, Texture::Filter::NearestPoint, Texture::Wrap::Clamp, false, true, false, RenderTexture::ReadFrom::Depth);
+RenderTexture mRenderTextureGreenLight("green light rt", WIDTH_SHADOW_MAP, HEIGHT_SHADOW_MAP, VK_FORMAT_UNDEFINED, Texture::Filter::NearestPoint, Texture::Wrap::Clamp, false, true, false, RenderTexture::ReadFrom::Depth);
+RenderTexture mRenderTextureBlueLight("blue light rt", WIDTH_SHADOW_MAP, HEIGHT_SHADOW_MAP, VK_FORMAT_UNDEFINED, Texture::Filter::NearestPoint, Texture::Wrap::Clamp, false, true, false, RenderTexture::ReadFrom::Depth);
+std::vector<std::vector<RenderTexture>> mRenderTextureBlurVec(static_cast<int>(BLUR_TYPE::Count), std::vector<RenderTexture>(MAX_BLUR_COUNT, RenderTexture("blur", WIDTH_RT, HEIGHT_RT, VK_FORMAT_R8G8B8A8_UNORM, Texture::Filter::Bilinear, Texture::Wrap::Clamp, true, false, false, RenderTexture::ReadFrom::Color)));//[BLUR_TYPE][BLUR_COUNT]
+Light mLightRed("light red", glm::vec3(0.5f, 0.5f, 0.5f), glm::vec3(5, 0, 0), &mCameraRedLight, &mRenderTextureRedLight);
+Light mLightGreen("light green", glm::vec3(0.5f, 0.5f, 0.5f), glm::vec3(0, 5, 0), &mCameraGreenLight, &mRenderTextureGreenLight);
+Light mLightBlue("light blue", glm::vec3(0.5f, 0.5f, 0.5f), glm::vec3(0, 0, 5), &mCameraBlueLight, &mRenderTextureBlueLight);
 
 //imgui stuff
 VkDescriptorPool ImGuiDescriptorPool;
@@ -83,6 +84,31 @@ bool MOUSE_MIDDLE_BUTTON_DOWN = false;
 
 void CreatePasses()
 {
+	//shadow
+	mPassShadowRed.SetCamera(&mCameraRedLight);
+	mPassShadowRed.AddMesh(&mMeshHead);
+	//mPassShadowRed.AddMesh(&mMeshSquareX);
+	//mPassShadowRed.AddMesh(&mMeshSquareY);
+	//mPassShadowRed.AddMesh(&mMeshSquareZ);
+	mPassShadowRed.AddRenderTexture(&mRenderTextureRedLight);
+	mPassShadowRed.AddShader(&mVertShaderShadow);
+
+	mPassShadowGreen.SetCamera(&mCameraGreenLight);
+	mPassShadowGreen.AddMesh(&mMeshHead);
+	//mPassShadowGreen.AddMesh(&mMeshSquareX);
+	//mPassShadowGreen.AddMesh(&mMeshSquareY);
+	//mPassShadowGreen.AddMesh(&mMeshSquareZ);
+	mPassShadowGreen.AddRenderTexture(&mRenderTextureGreenLight);
+	mPassShadowGreen.AddShader(&mVertShaderShadow);
+
+	mPassShadowBlue.SetCamera(&mCameraBlueLight);
+	mPassShadowBlue.AddMesh(&mMeshHead);
+	//mPassShadowBlue.AddMesh(&mMeshSquareX);
+	//mPassShadowBlue.AddMesh(&mMeshSquareY);
+	//mPassShadowBlue.AddMesh(&mMeshSquareZ);
+	mPassShadowBlue.AddRenderTexture(&mRenderTextureBlueLight);
+	mPassShadowBlue.AddShader(&mVertShaderShadow);
+
 	//skin
 	mPassSkin.SetCamera(&mCameraOffscreen);
 	mPassSkin.AddMesh(&mMeshHead);
@@ -90,59 +116,22 @@ void CreatePasses()
 	mPassSkin.AddTexture(&mTextureNormalSkin);
 	mPassSkin.AddRenderTexture(&mRenderTextureDiffuse);
 	mPassSkin.AddRenderTexture(&mRenderTextureSpecular);
-	mPassSkin.AddRenderTexture(&mRenderTextureDepth);
+	mPassSkin.AddRenderTexture(&mRenderTextureDepthStencil);//stencil write
 	mPassSkin.AddShader(&mVertShaderSkin);
 	mPassSkin.AddShader(&mFragShaderSkin);
 
 	//other
-	mPassStandard.SetCamera(&mCameraOffscreen);
-	mPassStandard.AddMesh(&mMeshSquareX);
-	mPassStandard.AddMesh(&mMeshSquareY);
-	mPassStandard.AddMesh(&mMeshSquareZ);
-	mPassStandard.AddTexture(&mTextureColorBrick);
-	mPassStandard.AddTexture(&mTextureNormalBrick);
-	mPassStandard.AddRenderTexture(&mRenderTextureDiffuse);
-	mPassStandard.AddRenderTexture(&mRenderTextureSpecular);
-	mPassStandard.AddRenderTexture(&mRenderTextureDepth);
-	mPassStandard.AddShader(&mVertShaderStandard);
-	mPassStandard.AddShader(&mFragShaderStandard);
-
-	//deferred
-	mPassDeferred.SetCamera(&mCameraDeferred);
-	mPassDeferred.AddMesh(&mMeshFullScreenQuad);
-	mPassDeferred.AddTexture(&mRenderTextureDiffuse);
-	mPassDeferred.AddTexture(&mRenderTextureSpecular);
-	for (auto& mRenderTextureBlurVertical : mRenderTextureBlurVec[static_cast<int>(BLUR_TYPE::Vertical)])
-	{
-		mPassDeferred.AddTexture(&mRenderTextureBlurVertical);//new
-	}
-	mPassDeferred.AddShader(&mVertShaderDeferred);
-	mPassDeferred.AddShader(&mFragShaderDeferred);
-
-	//shadow
-	mPassShadowRed.SetCamera(&mCameraRedLight);
-	mPassShadowRed.AddMesh(&mMeshHead);
-	mPassShadowRed.AddMesh(&mMeshSquareX);
-	mPassShadowRed.AddMesh(&mMeshSquareY);
-	mPassShadowRed.AddMesh(&mMeshSquareZ);
-	mPassShadowRed.AddRenderTexture(&mRenderTextureRedLight);
-	mPassShadowRed.AddShader(&mVertShaderShadow);
-
-	mPassShadowGreen.SetCamera(&mCameraGreenLight);
-	mPassShadowGreen.AddMesh(&mMeshHead);
-	mPassShadowGreen.AddMesh(&mMeshSquareX);
-	mPassShadowGreen.AddMesh(&mMeshSquareY);
-	mPassShadowGreen.AddMesh(&mMeshSquareZ);
-	mPassShadowGreen.AddRenderTexture(&mRenderTextureGreenLight);
-	mPassShadowGreen.AddShader(&mVertShaderShadow);
-
-	mPassShadowBlue.SetCamera(&mCameraBlueLight);
-	mPassShadowBlue.AddMesh(&mMeshHead);
-	mPassShadowBlue.AddMesh(&mMeshSquareX);
-	mPassShadowBlue.AddMesh(&mMeshSquareY);
-	mPassShadowBlue.AddMesh(&mMeshSquareZ);
-	mPassShadowBlue.AddRenderTexture(&mRenderTextureBlueLight);
-	mPassShadowBlue.AddShader(&mVertShaderShadow);
+	//mPassStandard.SetCamera(&mCameraOffscreen);
+	//mPassStandard.AddMesh(&mMeshSquareX);
+	//mPassStandard.AddMesh(&mMeshSquareY);
+	//mPassStandard.AddMesh(&mMeshSquareZ);
+	//mPassStandard.AddTexture(&mTextureColorBrick);
+	//mPassStandard.AddTexture(&mTextureNormalBrick);
+	//mPassStandard.AddRenderTexture(&mRenderTextureDiffuse);
+	//mPassStandard.AddRenderTexture(&mRenderTextureSpecular);
+	//mPassStandard.AddRenderTexture(&mRenderTextureDepthStencil);
+	//mPassStandard.AddShader(&mVertShaderStandard);
+	//mPassStandard.AddShader(&mFragShaderStandard);
 
 	//blur
 	//first blur
@@ -151,6 +140,7 @@ void CreatePasses()
 	mPassBlurVec[static_cast<int>(BLUR_TYPE::Horizontal)][0].AddTexture(&mRenderTextureDiffuse);//from diffuse
 	mPassBlurVec[static_cast<int>(BLUR_TYPE::Horizontal)][0].AddTexture(&mRenderTextureDiffuse);//input should also include depth
 	mPassBlurVec[static_cast<int>(BLUR_TYPE::Horizontal)][0].AddRenderTexture(&mRenderTextureBlurVec[static_cast<int>(BLUR_TYPE::Horizontal)][0]);//to h
+	mPassBlurVec[static_cast<int>(BLUR_TYPE::Horizontal)][0].AddRenderTexture(&mRenderTextureDepthStencil);//stencil test
 	mPassBlurVec[static_cast<int>(BLUR_TYPE::Horizontal)][0].AddShader(&mVertShaderDeferred);
 	mPassBlurVec[static_cast<int>(BLUR_TYPE::Horizontal)][0].AddShader(&mFragShaderBlurH);
 
@@ -159,6 +149,7 @@ void CreatePasses()
 	mPassBlurVec[static_cast<int>(BLUR_TYPE::Vertical)][0].AddTexture(&mRenderTextureBlurVec[static_cast<int>(BLUR_TYPE::Horizontal)][0]);//from h
 	mPassBlurVec[static_cast<int>(BLUR_TYPE::Vertical)][0].AddTexture(&mRenderTextureDiffuse);//input should also include depth
 	mPassBlurVec[static_cast<int>(BLUR_TYPE::Vertical)][0].AddRenderTexture(&mRenderTextureBlurVec[static_cast<int>(BLUR_TYPE::Vertical)][0]);//to v
+	mPassBlurVec[static_cast<int>(BLUR_TYPE::Vertical)][0].AddRenderTexture(&mRenderTextureDepthStencil);//stencil test
 	mPassBlurVec[static_cast<int>(BLUR_TYPE::Vertical)][0].AddShader(&mVertShaderDeferred);
 	mPassBlurVec[static_cast<int>(BLUR_TYPE::Vertical)][0].AddShader(&mFragShaderBlurV);
 	
@@ -170,6 +161,7 @@ void CreatePasses()
 		mPassBlurVec[static_cast<int>(BLUR_TYPE::Horizontal)][i].AddTexture(&mRenderTextureBlurVec[static_cast<int>(BLUR_TYPE::Vertical)][i - 1]);//from v
 		mPassBlurVec[static_cast<int>(BLUR_TYPE::Horizontal)][i].AddTexture(&mRenderTextureDiffuse);//input should also include depth
 		mPassBlurVec[static_cast<int>(BLUR_TYPE::Horizontal)][i].AddRenderTexture(&mRenderTextureBlurVec[static_cast<int>(BLUR_TYPE::Horizontal)][i]);//to h
+		mPassBlurVec[static_cast<int>(BLUR_TYPE::Horizontal)][i].AddRenderTexture(&mRenderTextureDepthStencil);//stencil test
 		mPassBlurVec[static_cast<int>(BLUR_TYPE::Horizontal)][i].AddShader(&mVertShaderDeferred);
 		mPassBlurVec[static_cast<int>(BLUR_TYPE::Horizontal)][i].AddShader(&mFragShaderBlurH);
 
@@ -178,20 +170,32 @@ void CreatePasses()
 		mPassBlurVec[static_cast<int>(BLUR_TYPE::Vertical)][i].AddTexture(&mRenderTextureBlurVec[static_cast<int>(BLUR_TYPE::Horizontal)][i]);//from h
 		mPassBlurVec[static_cast<int>(BLUR_TYPE::Vertical)][i].AddTexture(&mRenderTextureDiffuse);//input should also include depth
 		mPassBlurVec[static_cast<int>(BLUR_TYPE::Vertical)][i].AddRenderTexture(&mRenderTextureBlurVec[static_cast<int>(BLUR_TYPE::Vertical)][i]);//to v
+		mPassBlurVec[static_cast<int>(BLUR_TYPE::Vertical)][i].AddRenderTexture(&mRenderTextureDepthStencil);//stencil test
 		mPassBlurVec[static_cast<int>(BLUR_TYPE::Vertical)][i].AddShader(&mVertShaderDeferred);
 		mPassBlurVec[static_cast<int>(BLUR_TYPE::Vertical)][i].AddShader(&mFragShaderBlurV);
 	}
+
+	//deferred
+	mPassDeferred.SetCamera(&mCameraDeferred);
+	mPassDeferred.AddMesh(&mMeshFullScreenQuad);
+	mPassDeferred.AddTexture(&mRenderTextureDiffuse);
+	mPassDeferred.AddTexture(&mRenderTextureSpecular);
+	for (auto& mRenderTextureBlurVertical : mRenderTextureBlurVec[static_cast<int>(BLUR_TYPE::Vertical)])
+	{
+		mPassDeferred.AddTexture(&mRenderTextureBlurVertical);
+	}
+	mPassDeferred.AddShader(&mVertShaderDeferred);
+	mPassDeferred.AddShader(&mFragShaderDeferred);
 }
 
 void CreateScenes()
 {
 	mScene.AddPass(&mPassDeferred);
 	mScene.AddPass(&mPassSkin);
-	mScene.AddPass(&mPassStandard);
+	//mScene.AddPass(&mPassStandard);
 	mScene.AddPass(&mPassShadowRed);
 	mScene.AddPass(&mPassShadowGreen);
 	mScene.AddPass(&mPassShadowBlue);
-	//new
 	for (auto& blurPassVec : mPassBlurVec)
 	{
 		for (auto& blurPass : blurPassVec)
@@ -216,16 +220,15 @@ void CreateLevels()
 	mLevel.AddCamera(&mCameraBlueLight);
 	mLevel.AddMesh(&mMeshHead);
 	mLevel.AddMesh(&mMeshFullScreenQuad);
-	mLevel.AddMesh(&mMeshSquareX);
-	mLevel.AddMesh(&mMeshSquareY);
-	mLevel.AddMesh(&mMeshSquareZ);
+	//mLevel.AddMesh(&mMeshSquareX);
+	//mLevel.AddMesh(&mMeshSquareY);
+	//mLevel.AddMesh(&mMeshSquareZ);
 	mLevel.AddPass(&mPassDeferred);
 	mLevel.AddPass(&mPassSkin);
-	mLevel.AddPass(&mPassStandard);
+	//mLevel.AddPass(&mPassStandard);
 	mLevel.AddPass(&mPassShadowRed);
 	mLevel.AddPass(&mPassShadowGreen);
 	mLevel.AddPass(&mPassShadowBlue);
-	//new
 	for (auto& blurPassVec : mPassBlurVec)
 	{
 		for (auto& blurPass : blurPassVec)
@@ -236,8 +239,8 @@ void CreateLevels()
 	mLevel.AddScene(&mScene);
 	mLevel.AddShader(&mVertShaderSkin);
 	mLevel.AddShader(&mFragShaderSkin);
-	mLevel.AddShader(&mVertShaderStandard);
-	mLevel.AddShader(&mFragShaderStandard);
+	//mLevel.AddShader(&mVertShaderStandard);
+	//mLevel.AddShader(&mFragShaderStandard);
 	mLevel.AddShader(&mVertShaderDeferred);
 	mLevel.AddShader(&mFragShaderDeferred);
 	mLevel.AddShader(&mVertShaderShadow);
@@ -249,7 +252,7 @@ void CreateLevels()
 	mLevel.AddTexture(&mTextureNormalBrick);
 	mLevel.AddTexture(&mRenderTextureDiffuse);
 	mLevel.AddTexture(&mRenderTextureSpecular);
-	mLevel.AddTexture(&mRenderTextureDepth);
+	mLevel.AddTexture(&mRenderTextureDepthStencil);
 	mLevel.AddTexture(&mRenderTextureRedLight);
 	mLevel.AddTexture(&mRenderTextureGreenLight);
 	mLevel.AddTexture(&mRenderTextureBlueLight);
@@ -336,7 +339,7 @@ void MouseMotion(GLFWwindow* window, double x, double y)
 	{
 		pCurrentOrbitCamera->UpdatePosition();
 		mPassSkin.UpdatePassUniformBuffer(&mCameraOffscreen);
-		mPassStandard.UpdatePassUniformBuffer(&mCameraOffscreen);
+		//mPassStandard.UpdatePassUniformBuffer(&mCameraOffscreen);
 	}
 
 	xOld = static_cast<float>(x);
@@ -364,7 +367,7 @@ void MouseScroll(GLFWwindow* window, double x, double y)
 	{
 		pCurrentOrbitCamera->UpdatePosition();
 		mPassSkin.UpdatePassUniformBuffer(&mCameraOffscreen);
-		mPassStandard.UpdatePassUniformBuffer(&mCameraOffscreen);
+		//mPassStandard.UpdatePassUniformBuffer(&mCameraOffscreen);
 	}
 }
 
@@ -421,11 +424,11 @@ void InitRenderer()
 		mRenderer.GetLargestFrameDescriptorSetLayout(),
 		mPassSkin);
 
-	mRenderer.CreatePipeline(
-		mRenderer.standardPipeline,
-		mRenderer.standardPipelineLayout,
-		mRenderer.GetLargestFrameDescriptorSetLayout(),
-		mPassStandard);
+	//mRenderer.CreatePipeline(
+	//	mRenderer.standardPipeline,
+	//	mRenderer.standardPipelineLayout,
+	//	mRenderer.GetLargestFrameDescriptorSetLayout(),
+	//	mPassStandard);
 
 	mRenderer.CreatePipeline(
 		mRenderer.deferredPipeline,
@@ -535,11 +538,12 @@ void InitImGui()
 
 void DrawImGui(VkCommandBuffer commandBuffer)
 {
-	static int deferredMode = mScene.sUBO.deferredMode = 0;
-	static float m = mScene.sUBO.m = 0.1f;
-	static float rho_s = mScene.sUBO.rho_s = 0.5f;
-	static float stretchAlpha = mScene.sUBO.stretchAlpha = 0.3f;
-	static float stretchBeta = mScene.sUBO.stretchBeta = 2800.0f;
+	static int deferredMode = mScene.sUBO.deferredMode = 8;
+	static int shadowMode = mScene.sUBO.shadowMode = 1;
+	static float m = mScene.sUBO.m = 0.114f;
+	static float rho_s = mScene.sUBO.rho_s = 0.151f;
+	static float stretchAlpha = mScene.sUBO.stretchAlpha = 0.457f;
+	static float stretchBeta = mScene.sUBO.stretchBeta = 3000.0f;
 	static bool updateScene = true;
 
 	// Start the Dear ImGui frame
@@ -551,9 +555,15 @@ void DrawImGui(VkCommandBuffer commandBuffer)
 
 	ImGui::Text("Hold c and use mouse to manipulate camera.");
 
-	if (ImGui::SliderInt("deferredMode", &deferredMode, 0, 1 + MAX_BLUR_COUNT))
+	if (ImGui::SliderInt("deferredMode", &deferredMode, 0, 2 + MAX_BLUR_COUNT))
 	{
 		mScene.sUBO.deferredMode = deferredMode;
+		updateScene = true;
+	}
+
+	if (ImGui::SliderInt("shadowMode", &shadowMode, 0, 1))
+	{
+		mScene.sUBO.shadowMode = shadowMode;
 		updateScene = true;
 	}
 
@@ -569,13 +579,13 @@ void DrawImGui(VkCommandBuffer commandBuffer)
 		updateScene = true;
 	}
 
-	if (ImGui::SliderFloat("stretchAlpha", &stretchAlpha, 0.0f, 20.0f))
+	if (ImGui::SliderFloat("stretchAlpha", &stretchAlpha, 0.0f, 2.0f))
 	{
 		mScene.sUBO.stretchAlpha = stretchAlpha;
 		updateScene = true;
 	}
 
-	if (ImGui::SliderFloat("stretchBeta", &stretchBeta, 0.0f, 3000.0f))
+	if (ImGui::SliderFloat("stretchBeta", &stretchBeta, 0.0f, 10000.0f))
 	{
 		mScene.sUBO.stretchBeta = stretchBeta;
 		updateScene = true;
@@ -678,7 +688,7 @@ void Draw()
 
 	//depth & G buffer write
 
-	mRenderTextureDepth.TransitionDepthStencilLayoutToWrite(mRenderer.defaultCommandBuffers[imageIndex]);//new
+	mRenderTextureDepthStencil.TransitionDepthStencilLayoutToWrite(mRenderer.defaultCommandBuffers[imageIndex]);
 	mRenderTextureDiffuse.TransitionColorLayoutToWrite(mRenderer.defaultCommandBuffers[imageIndex]);
 	mRenderTextureSpecular.TransitionColorLayoutToWrite(mRenderer.defaultCommandBuffers[imageIndex]);
 
@@ -717,6 +727,7 @@ void Draw()
 		glm::vec4(0.8, 0.7, 0.8, 1.0),
 		glm::vec2(1.0, 0));
 
+	/*
 	//3.standard pipeline
 
 	//bind frame descriptor set
@@ -751,9 +762,10 @@ void Draw()
 		mRenderer.swapChainExtent);
 
 	//depth & diffuse read
+	*/
 
 	mRenderTextureDiffuse.TransitionColorLayoutToRead(mRenderer.defaultCommandBuffers[imageIndex]);
-	//mRenderTextureDepth.TransitionDepthStencilLayoutToRead(mRenderer.defaultCommandBuffers[imageIndex]);
+	//mRenderTextureDepthStencil.TransitionDepthStencilLayoutToRead(mRenderer.defaultCommandBuffers[imageIndex]);
 
 	//4.blur pipeline
 

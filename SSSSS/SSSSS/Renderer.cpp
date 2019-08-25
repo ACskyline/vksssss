@@ -1098,63 +1098,16 @@ void Renderer::RecordCommand(
 	glm::vec4 colorClear,
 	glm::vec2 depthStencilClear)
 {
-	bool customRenderTarget = pass.HasRenderTexture();
-	int rtColorCount = 0;
-
-	if (customRenderTarget)
-	{
-		//multiple render target is only available and meaningfull when rendering to render textures
-		//only under this situation can there be more than one color attachment
-		//color always comes before depth stencil
-		rtColorCount = pass.GetColorRenderTextureCount();
-	}
-	else
-	{
-		//when rendering to swapchain, only one color attachment will be cleared
-		//color always comes before depth stencil
-		rtColorCount = 1;
-	}
-
-	std::vector<VkClearValue> clearValues;
-	if (pass.IsClearEnabled())
-	{
-		//clear values
-		VkClearValue clearValue;
-		clearValue.color = { colorClear.r, colorClear.g, colorClear.b, colorClear.a };
-		clearValues.resize(rtColorCount + 1, clearValue);//only one depth stencil attachment will be present
-		clearValues[rtColorCount].depthStencil = { depthStencilClear.r, static_cast<uint32_t>(depthStencilClear.g) };
-	}
-
-	//bind pass descriptor set
-	vkCmdBindDescriptorSets(commandBuffer, VK_PIPELINE_BIND_POINT_GRAPHICS, pipelineLayout, static_cast<uint32_t>(UNIFORM_SLOT::Pass), 1, pass.GetPassDescriptorSetPtr(), 0, nullptr);
-
-	VkRenderPassBeginInfo renderPassInfo = {};
-	renderPassInfo.sType = VK_STRUCTURE_TYPE_RENDER_PASS_BEGIN_INFO;
-	renderPassInfo.renderPass = customRenderTarget ? pass.GetRenderPass() : renderPassFallback;
-	renderPassInfo.framebuffer = customRenderTarget ? pass.GetFramebuffer() : frameBufferFallback;
-	renderPassInfo.renderArea.offset = { 0, 0 };
-	renderPassInfo.renderArea.extent = customRenderTarget ? pass.GetExtent() : extentFallback;
-	renderPassInfo.clearValueCount = static_cast<uint32_t>(clearValues.size());
-	renderPassInfo.pClearValues = clearValues.data();
-
-	//render pass begin
-	vkCmdBeginRenderPass(commandBuffer, &renderPassInfo, VK_SUBPASS_CONTENTS_INLINE);
-	vkCmdBindPipeline(commandBuffer, VK_PIPELINE_BIND_POINT_GRAPHICS, pipeline);
-
-	//loop over meshes
-	for (auto mesh : pass.GetMeshVec())
-	{
-		VkBuffer vertexBuffers[] = { mesh->GetVertexBuffer() };
-		VkDeviceSize offsets[] = { 0 };
-		//bind object descriptor set
-		vkCmdBindDescriptorSets(commandBuffer, VK_PIPELINE_BIND_POINT_GRAPHICS, pipelineLayout, static_cast<uint32_t>(UNIFORM_SLOT::Object), 1, mesh->GetObjectDescriptorSetPtr(), 0, nullptr);
-
-		//bind vbo
-		vkCmdBindVertexBuffers(commandBuffer, 0, 1, vertexBuffers, offsets);
-		vkCmdBindIndexBuffer(commandBuffer, mesh->GetIndexBuffer(), 0, VK_INDEX_TYPE_UINT32);
-		//draw call
-		vkCmdDrawIndexed(commandBuffer, static_cast<uint32_t>(mesh->GetIndexVec().size()), 1, 0, 0, 0);
-	}
+	RecordCommandNoEnd(
+		pass,
+		commandBuffer,
+		pipeline,
+		pipelineLayout,
+		renderPassFallback,
+		frameBufferFallback,
+		extentFallback,
+		colorClear,
+		depthStencilClear);
 
 	//render pass end
 	vkCmdEndRenderPass(commandBuffer);
@@ -1188,14 +1141,19 @@ void Renderer::RecordCommandNoEnd(
 		rtColorCount = 1;
 	}
 
+	//clear values
 	std::vector<VkClearValue> clearValues;
-	if (pass.IsClearEnabled())
+	if (pass.IsClearColorEnabled())
 	{
-		//clear values
 		VkClearValue clearValue;
 		clearValue.color = { colorClear.r, colorClear.g, colorClear.b, colorClear.a };
-		clearValues.resize(rtColorCount + 1, clearValue);//only one depth stencil attachment will be present
-		clearValues[rtColorCount].depthStencil = { depthStencilClear.r, static_cast<uint32_t>(depthStencilClear.g) };
+		clearValues.resize(rtColorCount, clearValue);
+	}
+	if (pass.IsClearDepthStencilEnabled())
+	{
+		VkClearValue clearValue;
+		clearValue.depthStencil = { depthStencilClear.r, static_cast<uint32_t>(depthStencilClear.g) };
+		clearValues.push_back(clearValue);//only one depth stencil attachment will be present
 	}
 
 	//bind pass descriptor set
@@ -1620,8 +1578,8 @@ void Renderer::CleanUpSwapChain()
 	vkDestroyPipeline(device, skinPipeline, nullptr);
 	vkDestroyPipelineLayout(device, skinPipelineLayout, nullptr);
 
-	vkDestroyPipeline(device, standardPipeline, nullptr);
-	vkDestroyPipelineLayout(device, standardPipelineLayout, nullptr);
+	//vkDestroyPipeline(device, standardPipeline, nullptr);
+	//vkDestroyPipelineLayout(device, standardPipelineLayout, nullptr);
 
 	vkDestroyPipeline(device, shadowPipeline, nullptr);
 	vkDestroyPipelineLayout(device, shadowPipelineLayout, nullptr);

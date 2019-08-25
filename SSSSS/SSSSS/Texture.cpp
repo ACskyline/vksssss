@@ -5,8 +5,13 @@
 #define STB_IMAGE_IMPLEMENTATION
 #include <stb_image.h>
 
-Texture::Texture(const std::string& _fileName, VkFormat _textureFormat) :
-	pRenderer(nullptr), fileName(_fileName), textureFormat(_textureFormat), 
+Texture::Texture(const std::string& _fileName, VkFormat _textureFormat, Filter _filter, Wrap _wrap) :
+	pRenderer(nullptr), 
+	fileName(_fileName), 
+	textureFormat(_textureFormat), 
+	filter(_filter), 
+	wrap(_wrap),
+	mipLevels(1),
 	textureImage(VK_NULL_HANDLE), 
 	textureImageMemory(VK_NULL_HANDLE), 
 	textureImageView(VK_NULL_HANDLE),
@@ -58,11 +63,15 @@ void Texture::CreateTextureImage()
 	stbi_uc* pixels = stbi_load(fileName.c_str(), &width, &height, &texChannels, STBI_rgb_alpha);
 	VkDeviceSize imageSize = width * height * 4;
 
-	if (!pixels) {
+	if (!pixels) 
+	{
 		throw std::runtime_error("failed to load texture image!");
 	}
 
-	mipLevels = static_cast<uint32_t>(std::floor(std::log2(std::max(width, height)))) + 1;
+	if (filter == Filter::Trilinear)
+	{
+		mipLevels = static_cast<uint32_t>(std::floor(std::log2(std::max(width, height)))) + 1;
+	}
 
 	VkBuffer stagingBuffer;
 	VkDeviceMemory stagingBufferMemory;
@@ -85,9 +94,11 @@ void Texture::CreateTextureImage()
 		height, 
 		mipLevels,
 		VK_SAMPLE_COUNT_1_BIT,
-		textureFormat,//VK_FORMAT_R8G8B8A8_UNORM,
+		textureFormat,
 		VK_IMAGE_TILING_OPTIMAL,
-		VK_IMAGE_USAGE_TRANSFER_SRC_BIT | VK_IMAGE_USAGE_TRANSFER_DST_BIT | VK_IMAGE_USAGE_SAMPLED_BIT,
+		filter == Filter::Trilinear ?
+			VK_IMAGE_USAGE_TRANSFER_SRC_BIT | VK_IMAGE_USAGE_TRANSFER_DST_BIT | VK_IMAGE_USAGE_SAMPLED_BIT :
+			VK_IMAGE_USAGE_TRANSFER_DST_BIT | VK_IMAGE_USAGE_SAMPLED_BIT,
 		VK_MEMORY_PROPERTY_DEVICE_LOCAL_BIT,
 		textureImage, 
 		textureImageMemory);
@@ -96,7 +107,7 @@ void Texture::CreateTextureImage()
 	pRenderer->TransitionImageLayout(
 		pRenderer->defaultCommandPool, 
 		textureImage, 
-		textureFormat,//VK_FORMAT_R8G8B8A8_UNORM,
+		textureFormat,
 		VK_IMAGE_LAYOUT_UNDEFINED, 
 		VK_IMAGE_LAYOUT_TRANSFER_DST_OPTIMAL, 
 		mipLevels);
@@ -105,21 +116,24 @@ void Texture::CreateTextureImage()
 	vkDestroyBuffer(pRenderer->GetDevice(), stagingBuffer, nullptr);
 	vkFreeMemory(pRenderer->GetDevice(), stagingBufferMemory, nullptr);
 
-	pRenderer->GenerateMipmaps(
-		pRenderer->defaultCommandPool,
-		textureImage, 
-		textureFormat,//VK_FORMAT_R8G8B8A8_UNORM,
-		width, 
-		height, 
-		mipLevels);
+	if (filter == Filter::Trilinear)
+	{
+		pRenderer->GenerateMipmaps(
+			pRenderer->defaultCommandPool,
+			textureImage,
+			textureFormat,
+			width,
+			height,
+			mipLevels);
+	}
 }
 
 void Texture::CreateTextureImageView(VkImage image, VkFormat format, VkImageAspectFlags aspectFlags)
 {
 	textureImageView = pRenderer->CreateImageView(
-		image,//textureImage,
-		format,//textureFormat,//VK_FORMAT_R8G8B8A8_UNORM,
-		aspectFlags,//VK_IMAGE_ASPECT_COLOR_BIT, 
+		image,
+		format,
+		aspectFlags, 
 		mipLevels);
 }
 
@@ -127,21 +141,23 @@ void Texture::CreateTextureSampler()
 {
 	VkSamplerCreateInfo samplerInfo = {};
 	samplerInfo.sType = VK_STRUCTURE_TYPE_SAMPLER_CREATE_INFO;
-	samplerInfo.magFilter =	VK_FILTER_LINEAR;//VK_FILTER_NEAREST;// 
-	samplerInfo.minFilter = VK_FILTER_LINEAR;//VK_FILTER_NEAREST;// 
-	samplerInfo.addressModeU = VK_SAMPLER_ADDRESS_MODE_REPEAT;
-	samplerInfo.addressModeV = VK_SAMPLER_ADDRESS_MODE_REPEAT;
+	samplerInfo.magFilter =	filter == Filter::NearestPoint ? VK_FILTER_NEAREST : VK_FILTER_LINEAR; 
+	samplerInfo.minFilter = filter == Filter::NearestPoint ? VK_FILTER_NEAREST : VK_FILTER_LINEAR;
+	samplerInfo.addressModeU = wrap == Wrap::Clamp ? VK_SAMPLER_ADDRESS_MODE_CLAMP_TO_EDGE : 
+									wrap == Wrap::Mirror ? VK_SAMPLER_ADDRESS_MODE_MIRRORED_REPEAT :
+										wrap == Wrap::Repeat ? VK_SAMPLER_ADDRESS_MODE_REPEAT : VK_SAMPLER_ADDRESS_MODE_REPEAT;//default to repeat
+	samplerInfo.addressModeV = samplerInfo.addressModeU;
 	samplerInfo.addressModeW = VK_SAMPLER_ADDRESS_MODE_REPEAT;
 	samplerInfo.anisotropyEnable = VK_TRUE;
 	samplerInfo.maxAnisotropy = 16;
 	samplerInfo.borderColor = VK_BORDER_COLOR_INT_OPAQUE_BLACK;
 	samplerInfo.unnormalizedCoordinates = VK_FALSE;
-	samplerInfo.compareEnable = VK_FALSE;
-	samplerInfo.compareOp = VK_COMPARE_OP_ALWAYS;
-	samplerInfo.mipmapMode = VK_SAMPLER_MIPMAP_MODE_LINEAR;//tri-linear
-	samplerInfo.minLod = 0; // Optional
+	samplerInfo.compareEnable = VK_TRUE;//for pcf, always on, not sure if it affects performance when unused
+	samplerInfo.compareOp = VK_COMPARE_OP_LESS_OR_EQUAL;//for pcf, always on, not sure if it affects performance when unused
+	samplerInfo.mipmapMode = VK_SAMPLER_MIPMAP_MODE_LINEAR;//for trilinear, always on, but it is also controlled by maxLod
+	samplerInfo.minLod = 0;
 	samplerInfo.maxLod = static_cast<float>(mipLevels);
-	samplerInfo.mipLodBias = 0; // Optional
+	samplerInfo.mipLodBias = 0;
 
 	if (vkCreateSampler(pRenderer->GetDevice(), &samplerInfo, nullptr, &textureSampler) != VK_SUCCESS) {
 		throw std::runtime_error("failed to create texture sampler!");
@@ -164,8 +180,12 @@ void Texture::CleanUp()
 //////// Render Texture ////////
 ////////////////////////////////
 
-RenderTexture::RenderTexture(const std::string& _name, int _width, int _height, uint32_t _mipLevels, VkFormat _colorFormat, bool _supportColor, bool _supportDepthStencil, bool _supportMsaa)
-	: Texture(_name, _colorFormat), supportColor(_supportColor), supportDepthStencil(_supportDepthStencil), supportMsaa(_supportMsaa),
+RenderTexture::RenderTexture(const std::string& _name, int _width, int _height, VkFormat _colorFormat, Filter _filter, Wrap _wrap, bool _supportColor, bool _supportDepthStencil, bool _supportMsaa, ReadFrom _readFrom)
+	: Texture(_name, _colorFormat, _filter, _wrap), 
+	supportColor(_supportColor), 
+	supportDepthStencil(_supportDepthStencil), 
+	supportMsaa(_supportMsaa), 
+	readFrom(_readFrom),
 	depthStencilImage(VK_NULL_HANDLE),
 	depthStencilImageMemory(VK_NULL_HANDLE),
 	depthStencilImageView(VK_NULL_HANDLE),
@@ -175,7 +195,10 @@ RenderTexture::RenderTexture(const std::string& _name, int _width, int _height, 
 {
 	width = _width;
 	height = _height;
-	mipLevels = _mipLevels;
+	if (filter == Filter::Trilinear)
+	{
+		mipLevels = static_cast<uint32_t>(std::floor(std::log2(std::max(width, height)))) + 1;
+	}
 }
 
 RenderTexture::~RenderTexture()
@@ -196,14 +219,34 @@ void RenderTexture::InitTexture(Renderer* _pRenderer)
 	CreateRenderTextureImage();
 
 	//this is for read
-	if (supportColor)
+	if (supportColor && readFrom == ReadFrom::Color)
 	{
 		CreateTextureImageView(textureImage, textureFormat, VK_IMAGE_ASPECT_COLOR_BIT);
 	}
-	else if (supportDepthStencil)
+	else if (supportDepthStencil && readFrom == ReadFrom::Depth)
 	{
-		CreateTextureImageView(depthStencilImage, depthStencilFormat, VK_IMAGE_ASPECT_DEPTH_BIT);//no VK_IMAGE_ASPECT_STENCIL_BIT when reading, choose either depth or stencil, https://www.khronos.org/registry/vulkan/specs/1.1-extensions/man/html/VkImageViewCreateInfo.html
+		//When using an image view of a depth/stencil image to populate a descriptor set 
+		//(e.g. for sampling in the shader, or for use as an input attachment), 
+		//the aspectMask must only include one bit and selects whether the image view is used for depth reads 
+		//(i.e. using a floating-point sampler or input attachment in the shader) or stencil reads 
+		//(i.e. using an unsigned integer sampler or input attachment in the shader). 
+		//When an image view of a depth/stencil image is used as a depth/stencil framebuffer attachment, 
+		//the aspectMask is ignored and both depth and stencil image subresources are used.
+		CreateTextureImageView(depthStencilImage, depthStencilFormat, VK_IMAGE_ASPECT_DEPTH_BIT);//no VK_IMAGE_ASPECT_STENCIL_BIT when reading, choose either depth or stencil, https://www.khronos.org/registry/vulkan/specs/1.1-extensions/man/html/VkImageSubresourceRange.html
 	}
+	else if (supportDepthStencil && readFrom == ReadFrom::Stencil)
+	{
+		//When using an image view of a depth/stencil image to populate a descriptor set 
+		//(e.g. for sampling in the shader, or for use as an input attachment), 
+		//the aspectMask must only include one bit and selects whether the image view is used for depth reads 
+		//(i.e. using a floating-point sampler or input attachment in the shader) or stencil reads 
+		//(i.e. using an unsigned integer sampler or input attachment in the shader). 
+		//When an image view of a depth/stencil image is used as a depth/stencil framebuffer attachment, 
+		//the aspectMask is ignored and both depth and stencil image subresources are used.
+		CreateTextureImageView(depthStencilImage, depthStencilFormat, VK_IMAGE_ASPECT_STENCIL_BIT);//no VK_IMAGE_ASPECT_DEPTH_BIT when reading, choose either depth or stencil, https://www.khronos.org/registry/vulkan/specs/1.1-extensions/man/html/VkImageSubresourceRange.html
+	}
+	//else
+		//nothing
 
 	CreateTextureSampler();
 }
@@ -241,23 +284,23 @@ VkAttachmentDescription RenderTexture::GetColorAttachment(bool clear) const
 	colorAttachment.storeOp = VK_ATTACHMENT_STORE_OP_STORE;
 	colorAttachment.stencilLoadOp = VK_ATTACHMENT_LOAD_OP_DONT_CARE;
 	colorAttachment.stencilStoreOp = VK_ATTACHMENT_STORE_OP_DONT_CARE;
-	colorAttachment.initialLayout = VK_IMAGE_LAYOUT_COLOR_ATTACHMENT_OPTIMAL;// VK_IMAGE_LAYOUT_UNDEFINED;
+	colorAttachment.initialLayout = VK_IMAGE_LAYOUT_COLOR_ATTACHMENT_OPTIMAL;
 	colorAttachment.finalLayout = VK_IMAGE_LAYOUT_COLOR_ATTACHMENT_OPTIMAL;
 	return colorAttachment;
 }
 
-VkAttachmentDescription RenderTexture::GetDepthAttachment(bool clear) const
+VkAttachmentDescription RenderTexture::GetDepthStencilAttachment(bool clearDepth, bool clearStencil) const
 {
-	VkAttachmentDescription depthAttachment = {};
-	depthAttachment.format = depthStencilFormat;
-	depthAttachment.samples = supportMsaa ? msaaSamples : VK_SAMPLE_COUNT_1_BIT,//msaa
-	depthAttachment.loadOp = clear ? VK_ATTACHMENT_LOAD_OP_CLEAR : VK_ATTACHMENT_LOAD_OP_LOAD;
-	depthAttachment.storeOp = VK_ATTACHMENT_STORE_OP_STORE;// VK_ATTACHMENT_STORE_OP_DONT_CARE;
-	depthAttachment.stencilLoadOp = VK_ATTACHMENT_LOAD_OP_DONT_CARE;
-	depthAttachment.stencilStoreOp = VK_ATTACHMENT_STORE_OP_DONT_CARE;
-	depthAttachment.initialLayout = VK_IMAGE_LAYOUT_DEPTH_STENCIL_ATTACHMENT_OPTIMAL;// VK_IMAGE_LAYOUT_UNDEFINED;
-	depthAttachment.finalLayout = VK_IMAGE_LAYOUT_DEPTH_STENCIL_ATTACHMENT_OPTIMAL;
-	return depthAttachment;
+	VkAttachmentDescription depthStencilAttachment = {};
+	depthStencilAttachment.format = depthStencilFormat;
+	depthStencilAttachment.samples = supportMsaa ? msaaSamples : VK_SAMPLE_COUNT_1_BIT,//msaa
+	depthStencilAttachment.loadOp = clearDepth ? VK_ATTACHMENT_LOAD_OP_CLEAR : VK_ATTACHMENT_LOAD_OP_LOAD;
+	depthStencilAttachment.storeOp = supportDepthStencil ? VK_ATTACHMENT_STORE_OP_STORE : VK_ATTACHMENT_STORE_OP_DONT_CARE;
+	depthStencilAttachment.stencilLoadOp = clearStencil ? VK_ATTACHMENT_LOAD_OP_CLEAR : VK_ATTACHMENT_LOAD_OP_LOAD;;
+	depthStencilAttachment.stencilStoreOp = supportDepthStencil ? VK_ATTACHMENT_STORE_OP_STORE : VK_ATTACHMENT_STORE_OP_DONT_CARE;
+	depthStencilAttachment.initialLayout = VK_IMAGE_LAYOUT_DEPTH_STENCIL_ATTACHMENT_OPTIMAL;
+	depthStencilAttachment.finalLayout = VK_IMAGE_LAYOUT_DEPTH_STENCIL_ATTACHMENT_OPTIMAL;
+	return depthStencilAttachment;
 }
 
 VkAttachmentDescription RenderTexture::GetPreResolveAttachment(bool clear) const
@@ -279,7 +322,7 @@ VkImageView RenderTexture::GetColorImageView() const
 	return colorImageView;
 }
 
-VkImageView RenderTexture::GetDepthImageView() const
+VkImageView RenderTexture::GetDepthStencilImageView() const
 {
 	return depthStencilImageView;
 }
@@ -326,18 +369,24 @@ void RenderTexture::CreateRenderTextureImage()
 		pRenderer->TransitionImageLayout(pRenderer->defaultCommandPool, preResolveImage, textureFormat, VK_IMAGE_LAYOUT_UNDEFINED, VK_IMAGE_LAYOUT_COLOR_ATTACHMENT_OPTIMAL, 1);
 	}
 
-	//depth
+	//depth stencil
 	if (supportDepthStencil)
 	{
 		depthStencilFormat = pRenderer->FindDepthStencilFormat();
 		pRenderer->CreateImage(
 			static_cast<uint32_t>(width),
 			static_cast<uint32_t>(height),
-			1,//depth buffer does not need mip map
+			mipLevels,
 			supportMsaa ? msaaSamples : VK_SAMPLE_COUNT_1_BIT,//msaa
 			depthStencilFormat,
 			VK_IMAGE_TILING_OPTIMAL,
-			VK_IMAGE_USAGE_DEPTH_STENCIL_ATTACHMENT_BIT | VK_IMAGE_USAGE_SAMPLED_BIT,
+			readFrom == ReadFrom::Depth || readFrom == ReadFrom::Stencil ?
+				(filter == Filter::Trilinear ?
+					(VK_IMAGE_USAGE_DEPTH_STENCIL_ATTACHMENT_BIT | VK_IMAGE_USAGE_TRANSFER_SRC_BIT | VK_IMAGE_USAGE_TRANSFER_DST_BIT | VK_IMAGE_USAGE_SAMPLED_BIT)
+					:
+					(VK_IMAGE_USAGE_DEPTH_STENCIL_ATTACHMENT_BIT | VK_IMAGE_USAGE_SAMPLED_BIT))
+				:
+				VK_IMAGE_USAGE_DEPTH_STENCIL_ATTACHMENT_BIT,
 			VK_MEMORY_PROPERTY_DEVICE_LOCAL_BIT,
 			depthStencilImage,
 			depthStencilImageMemory);
@@ -356,7 +405,13 @@ void RenderTexture::CreateRenderTextureImage()
 			VK_SAMPLE_COUNT_1_BIT,//no msaa
 			textureFormat,
 			VK_IMAGE_TILING_OPTIMAL,
-			VK_IMAGE_USAGE_COLOR_ATTACHMENT_BIT | VK_IMAGE_USAGE_TRANSFER_SRC_BIT | VK_IMAGE_USAGE_TRANSFER_DST_BIT | VK_IMAGE_USAGE_SAMPLED_BIT,
+			readFrom == ReadFrom::Color ? 
+				(filter == Filter::Trilinear ? 
+					(VK_IMAGE_USAGE_COLOR_ATTACHMENT_BIT | VK_IMAGE_USAGE_TRANSFER_SRC_BIT | VK_IMAGE_USAGE_TRANSFER_DST_BIT | VK_IMAGE_USAGE_SAMPLED_BIT)
+					:
+					(VK_IMAGE_USAGE_COLOR_ATTACHMENT_BIT | VK_IMAGE_USAGE_SAMPLED_BIT))
+				:
+				VK_IMAGE_USAGE_COLOR_ATTACHMENT_BIT,
 			VK_MEMORY_PROPERTY_DEVICE_LOCAL_BIT,
 			textureImage,
 			textureImageMemory);

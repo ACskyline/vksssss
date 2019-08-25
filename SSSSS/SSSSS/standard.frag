@@ -24,26 +24,38 @@ void main()
 	vec3 normalWorld = normalize(tangentToWorld * normalize((normal * 2.0 - 1.0)));
 	vec3 normalWorldAsColor = normalWorld * 0.5 + 0.5;
 	vec3 albedo = texture(texSamplerColor, uv).rgb;
+	vec3 cameraDirWorld = normalize(passUBO.cameraPosition.xyz - fragPosition);
 	
-	outDiffuse = vec4(albedo, gl_FragCoord.z);
-
+	vec3 diffuseTotal = vec3(0, 0, 0);
 	vec3 specularTotal = vec3(0, 0, 0);
+
 	for(uint i = 0;i<sceneUBO.lightCount;i++)
 	{
+		float shadow = ShadowFeeler(
+			sceneUBO.lightArr[i].view,
+			sceneUBO.lightArr[i].proj,
+			fragPosition,
+			lightTextureArray[sceneUBO.lightArr[i].textureIndex]);
+
+		vec3 lightDirWorld = normalize(sceneUBO.lightArr[i].position.xyz - fragPosition);
+
+		diffuseTotal +=
+			albedo *
+			sceneUBO.lightArr[i].color.rgb * 
+			clamp(dot(lightDirWorld, normalWorld), 0, 1) * 
+			shadow;
+			
 		specularTotal += 
 			sceneUBO.lightArr[i].color.rgb *
-//			KS_Skin_Specular(
-//				normalWorld, 
-//				normalize(sceneUBO.lightArr[i].position.xyz - fragPosition),
-//				normalize(passUBO.cameraPosition.xyz - fragPosition),
-//				sceneUBO.m,
-//				sceneUBO.rho_s) * 
-			ShadowFeeler(
-				sceneUBO.lightArr[i].view,
-				sceneUBO.lightArr[i].proj,
-				fragPosition,
-				lightTextureArray[sceneUBO.lightArr[i].textureIndex]);
+			KS_Skin_Specular(
+				normalWorld, 
+				lightDirWorld,
+				cameraDirWorld,
+				sceneUBO.m,
+				sceneUBO.rho_s) * 
+			shadow;
 	}
 
+	outDiffuse = vec4(diffuseTotal, gl_FragCoord.z);
 	outSpecular = vec4(specularTotal, 1.0);
 }

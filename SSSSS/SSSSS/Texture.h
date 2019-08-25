@@ -7,7 +7,11 @@ class Renderer;
 class Texture
 {
 public:
-	Texture(const std::string& _fileName, VkFormat _textureFormat);
+
+	enum class Filter { NearestPoint, Bilinear, Trilinear };
+	enum class Wrap { Clamp, Repeat, Mirror };//clamp to edge
+
+	Texture(const std::string& _fileName, VkFormat _textureFormat, Filter _filter, Wrap _wrap);
 	virtual ~Texture();
 
 	VkImageView GetTextureImageView() const;
@@ -27,6 +31,8 @@ protected:
 
 	// ~ texture ~
 
+	Filter filter;
+	Wrap wrap;
 	uint32_t mipLevels;
 	VkImage textureImage;
 	VkDeviceMemory textureImageMemory;
@@ -38,6 +44,7 @@ protected:
 
 	void CreateTextureImageView(VkImage image, VkFormat format, VkImageAspectFlags aspectFlags);
 	void CreateTextureSampler();
+	VkFilter GetVkFilter();
 
 private:
 	// ~ texture only functions ~
@@ -52,8 +59,11 @@ private:
 class RenderTexture : public Texture
 {
 public:
+
+	enum class ReadFrom { Color, Depth, Stencil, None };
+
 	//RenderTexture();
-	RenderTexture(const std::string& _name, int _width, int _height, uint32_t _mipLevels, VkFormat _colorFormat, bool _supportColor, bool _supportDepthStencil, bool _supportMsaa);
+	RenderTexture(const std::string& _name, int _width, int _height, VkFormat _colorFormat, Filter _filter, Wrap _wrap, bool _supportColor, bool _supportDepthStencil, bool _supportMsaa, ReadFrom _readFrom);
 	virtual ~RenderTexture();
 
 	void virtual InitTexture(Renderer* _pRenderer);
@@ -62,10 +72,10 @@ public:
 
 	VkSampleCountFlagBits GetMsaaSamples() const;
 	VkAttachmentDescription GetColorAttachment(bool clear) const;
-	VkAttachmentDescription GetDepthAttachment(bool clear) const;
+	VkAttachmentDescription GetDepthStencilAttachment(bool clearDepth, bool clearStencil) const;
 	VkAttachmentDescription GetPreResolveAttachment(bool clear) const;
 	VkImageView GetColorImageView() const;
-	VkImageView GetDepthImageView() const;
+	VkImageView GetDepthStencilImageView() const;
 	VkImageView GetPreResolveImageView() const;
 	bool SupportColor();
 	bool SupportDepthStencil();
@@ -78,6 +88,10 @@ public:
 	void TransitionDepthStencilLayoutToRead(VkCommandBuffer commandBuffer);
 
 private:
+
+	// ~ general info ~
+
+	ReadFrom readFrom;
 
 	// ~ color buffer ~
 

@@ -33,12 +33,12 @@ struct LightData {
 struct SceneUniformBufferObject {
 	uint32_t time = 0;
 	uint32_t deferredMode = 0;
+	uint32_t shadowMode = 0;
 	uint32_t lightCount = 0;
 	float m = 0.0f;//roughness
 	float rho_s = 0.0f;//specularity factor
 	float stretchAlpha = 0.0f;
 	float stretchBeta = 0.0f;
-	uint32_t PADDING0 = 0;
 	LightData lightArr[MAX_LIGHTS_PER_SCENE];
 };
 

@@ -5,23 +5,26 @@
 #include "Mesh.h"
 #include "Renderer.h"
 
-Pass::Pass(const std::string& _name, bool _clear,
+Pass::Pass(const std::string& _name, 
+	bool _clearColor, 
+	bool _clearDepth, 
+	bool _clearStencil,
 	bool _enableDepthTest,
 	bool _enableDepthWrite,
 	bool _enableStencil,
 	VkCompareOp _stencilCompareOp,
 	VkStencilOp _depthFailOp,
-	VkStencilOp _stencilPassOp,
 	VkStencilOp _stencilFailOp,
+	VkStencilOp _stencilPassOp,
 	uint32_t _stencilReference) :
-	pRenderer(nullptr), pScene(nullptr), pCamera(nullptr), name(_name), clear(_clear),
+	pRenderer(nullptr), pScene(nullptr), pCamera(nullptr), name(_name), clearColor(_clearColor), clearDepth(_clearDepth), clearStencil(_clearStencil),
 	enableDepthTest(_enableDepthTest),
 	enableDepthWrite(_enableDepthWrite),
 	enableStencil(_enableStencil),
 	stencilCompareOp(_stencilCompareOp),
 	depthFailOp(_depthFailOp),
-	stencilPassOp(_stencilPassOp),
 	stencilFailOp(_stencilFailOp),
+	stencilPassOp(_stencilPassOp),
 	stencilReference(_stencilReference)
 {
 	for (auto& pShader : pShaderArr)
@@ -63,9 +66,14 @@ void Pass::AddShader(Shader* pShader)
 	pShaderArr[static_cast<int>(pShader->GetShaderType())] = pShader;
 }
 
-bool Pass::IsClearEnabled() const
+bool Pass::IsClearColorEnabled() const
 {
-	return clear;
+	return clearColor;
+}
+
+bool Pass::IsClearDepthStencilEnabled() const
+{
+	return clearDepth || clearStencil;
 }
 
 bool Pass::IsDepthTestEnabled() const
@@ -302,19 +310,19 @@ void Pass::InitPass(
 
 			if (pRenderTextureVec[i]->SupportColor())
 			{
-				colorAttachments.push_back(pRenderTextureVec[i]->GetColorAttachment(clear));
+				colorAttachments.push_back(pRenderTextureVec[i]->GetColorAttachment(clearColor));
 				colorViews.push_back(pRenderTextureVec[i]->GetColorImageView());
 			}
 
 			if (pRenderTextureVec[i]->SupportDepthStencil())
 			{
-				depthAttachments.push_back(pRenderTextureVec[i]->GetDepthAttachment(clear));
-				depthViews.push_back(pRenderTextureVec[i]->GetDepthImageView());
+				depthAttachments.push_back(pRenderTextureVec[i]->GetDepthStencilAttachment(clearDepth, clearStencil));
+				depthViews.push_back(pRenderTextureVec[i]->GetDepthStencilImageView());
 			}
 
 			if (pRenderTextureVec[i]->SupportMsaa())
 			{
-				preResolveAttachments.push_back(pRenderTextureVec[i]->GetPreResolveAttachment(clear));
+				preResolveAttachments.push_back(pRenderTextureVec[i]->GetPreResolveAttachment(clearColor));
 				preResolveViews.push_back(pRenderTextureVec[i]->GetPreResolveImageView());
 			}
 		}

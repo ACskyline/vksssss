@@ -251,8 +251,8 @@ public:
 
 	// ~ standard pipeline resources ~
 
-	VkPipeline standardPipeline;
-	VkPipelineLayout standardPipelineLayout;
+	//VkPipeline standardPipeline;
+	//VkPipelineLayout standardPipelineLayout;
 
 	// ~ shadow mapping pipeline resources ~
 

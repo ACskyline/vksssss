@@ -13,14 +13,17 @@ class RenderTexture;
 class Pass
 {
 public:
-	Pass(const std::string& _name, bool _clear,
+	Pass(const std::string& _name, 
+		bool _clearColor = true, 
+		bool _clearDepth = true, 
+		bool _clearStencil = true,
 		bool _enableDepthTest = true,
 		bool _enableDepthWrite = true,
 		bool _enableStencil = false,
 		VkCompareOp _stencilCompareOp = VK_COMPARE_OP_ALWAYS,
 		VkStencilOp _depthFailOp = VK_STENCIL_OP_KEEP,
-		VkStencilOp _stencilPassOp = VK_STENCIL_OP_KEEP,
 		VkStencilOp _stencilFailOp = VK_STENCIL_OP_KEEP,
+		VkStencilOp _stencilPassOp = VK_STENCIL_OP_KEEP,
 		uint32_t _stencilReference = 0);
 	~Pass();
 
@@ -31,7 +34,8 @@ public:
 	void AddShader(Shader* pShader);
 	void SetScene(Scene* _pScene);
 
-	bool IsClearEnabled() const;
+	bool IsClearColorEnabled() const;
+	bool IsClearDepthStencilEnabled() const;
 	bool IsDepthTestEnabled() const;
 	bool IsDepthWriteEnabled() const;
 	bool IsStencilEnabled() const;
@@ -86,7 +90,9 @@ private:
 	Renderer* pRenderer;
 	Scene* pScene;
 	std::string name;
-	bool clear;
+	bool clearColor;
+	bool clearDepth;
+	bool clearStencil;
 	bool enableDepthTest;
 	bool enableDepthWrite;
 	bool enableStencil;
