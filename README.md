@@ -3,17 +3,17 @@ A screen space sub-surface scattering demo implemented with vulkan api
 
 Scattering
 
-* http://www.iryoku.com/sssss/
+* [Reference](http://www.iryoku.com/sssss/)
 
-![](./1.jpg)
+![](1.JPG)
 
 Translucency
 
-* https://colinbarrebrisebois.com/2011/03/07/gdc-2011-approximating-translucency-for-a-fast-cheap-and-convincing-subsurface-scattering-look/
+* [Reference](https://colinbarrebrisebois.com/2011/03/07/gdc-2011-approximating-translucency-for-a-fast-cheap-and-convincing-subsurface-scattering-look/)
 
-![](./2.jpg)
+![](2.JPG)
 
-![](./3.jpg)
+![](3.JPG)
 
 Other Reference
 
