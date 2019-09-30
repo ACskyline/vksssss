@@ -37,9 +37,14 @@ VkBuffer Mesh::GetIndexBuffer() const
 	return indexBuffer;
 }
 
-VkDescriptorSet* Mesh::GetObjectDescriptorSetPtr()
+VkDescriptorSet* Mesh::GetObjectDescriptorSetPtr(int frame)
 {
-	return &objectDescriptorSet;
+	return objectDescriptorSetVec.data() + frame;
+}
+
+int Mesh::GetObjectDescriptorSetCount() const
+{
+	return objectDescriptorSetVec.size();
 }
 
 const std::vector<uint32_t>& Mesh::GetIndexVec() const
@@ -88,29 +93,35 @@ void Mesh::InitMesh(Renderer* _pRenderer, VkDescriptorPool descriptorPool)
 	CreateIndexBuffer();
 
 	//create uniform resources
-	CreateObjectUniformBuffer();
+	CreateObjectUniformBuffer(_pRenderer->frameCount);
 	pRenderer->CreateDescriptorSetLayout(
 		objectDescriptorSetLayout,
 		0,
 		oUboCount,//only 1 oUBO
 		oUboCount,//only 1 oUBO, so offset is 1
 		static_cast<uint32_t>(pTextureVec.size()));
-	pRenderer->CreateDescriptorSet(
-		objectDescriptorSet,
+	objectDescriptorSetVec.resize(_pRenderer->frameCount);
+	pRenderer->CreateDescriptorSets(
+		objectDescriptorSetVec,
 		descriptorPool,
 		objectDescriptorSetLayout);
 
-	//bind ubo
-	pRenderer->BindUniformBufferToDescriptorSets(objectUniformBuffer, sizeof(oUBO), { objectDescriptorSet }, 0);//only 1 oUBO
-
-	//bind texture
-	for (int i = 0; i < pTextureVec.size(); i++)
+	VkDeviceSize uboSize = sizeof(oUBO);
+	for (int i = 0; i < objectDescriptorSetVec.size(); i++)
 	{
-		pRenderer->BindTextureToDescriptorSets(pTextureVec[i]->GetTextureImageView(), pTextureVec[i]->GetSampler(), { objectDescriptorSet }, oUboCount + i);//only 1 oUBO, so offset is 1
+		//bind ubo
+		VkDeviceSize uboOffset = pRenderer->GetAlignedUboOffset(uboSize, i);
+		pRenderer->BindUniformBufferToDescriptorSets(objectUniformBuffer, uboOffset, uboSize, { objectDescriptorSetVec[i] }, 0);//only 1 oUBO
+
+		//bind texture
+		for (int j = 0; j < pTextureVec.size(); j++)
+		{
+			pRenderer->BindTextureToDescriptorSets(pTextureVec[j]->GetTextureImageView(), pTextureVec[j]->GetSampler(), { objectDescriptorSetVec[i] }, oUboCount + j);//only 1 oUBO, so binding offset is 1
+		}
 	}
 }
 
-void Mesh::UpdateObjectUniformBuffer()
+void Mesh::UpdateObjectUniformBuffer(int frame)
 {
 	oUBO.model = glm::translate(glm::mat4(1.0f), position) *
 		glm::rotate(glm::mat4(1.0f), glm::radians(rotation.z), glm::vec3(0, 0, 1)) *
@@ -126,14 +137,16 @@ void Mesh::UpdateObjectUniformBuffer()
 		glm::translate(glm::mat4(1.0f), -position));
 
 	void* data;
-	vkMapMemory(pRenderer->GetDevice(), objectUniformBufferMemory, 0, sizeof(oUBO), 0, &data);
+	VkDeviceSize size = sizeof(oUBO);
+	VkDeviceSize offset = pRenderer->GetAlignedUboOffset(size, frame);
+	vkMapMemory(pRenderer->GetDevice(), objectUniformBufferMemory, offset, size, 0, &data);
 	memcpy(data, &oUBO, sizeof(oUBO));
 	vkUnmapMemory(pRenderer->GetDevice(), objectUniformBufferMemory);
 }
 
-void Mesh::CreateObjectUniformBuffer()
+void Mesh::CreateObjectUniformBuffer(int frameCount)
 {
-	VkDeviceSize bufferSize = sizeof(ObjectUniformBufferObject);
+	VkDeviceSize bufferSize = pRenderer->GetAlignedUboSize(sizeof(ObjectUniformBufferObject)) * frameCount;
 
 	pRenderer->CreateBuffer(bufferSize,
 		VK_BUFFER_USAGE_UNIFORM_BUFFER_BIT,
@@ -142,7 +155,10 @@ void Mesh::CreateObjectUniformBuffer()
 		objectUniformBufferMemory);
 
 	//initial update
-	UpdateObjectUniformBuffer();
+	for (int i = 0; i < frameCount; i++)
+	{
+		UpdateObjectUniformBuffer(i);
+	}
 }
 
 void Mesh::CreateVertexBuffer() {

@@ -21,12 +21,14 @@ enum class UNIFORM_SLOT { Scene, Frame, Pass, Object, Count };
 struct LightData {
 	glm::mat4 view = glm::mat4(1);
 	glm::mat4 proj = glm::mat4(1);
-	glm::vec4 color = { 0,0,0,0 };//Warning: Implementations sometimes get the std140 layout wrong for vec3 components. You are advised to manually pad your structures/arrays out and avoid using vec3 at all.
-	glm::vec4 position = { 0,0,0,0 };//https://www.khronos.org/opengl/wiki/Interface_Block_(GLSL)#Memory_layout
+	glm::mat4 viewInv = glm::mat4(1);
+	glm::mat4 projInv = glm::mat4(1);
+	glm::vec4 color = { 0, 0, 0, 0 };//Warning: Implementations sometimes get the std140 layout wrong for vec3 components. You are advised to manually pad your structures/arrays out and avoid using vec3 at all.
+	glm::vec4 position = { 0, 0, 0, 0 };//https://www.khronos.org/opengl/wiki/Interface_Block_(GLSL)#Memory_layout
 	int32_t textureIndex = -1;//-1 means no texture is attached
-	uint32_t PADDING0 = 0;
-	uint32_t PADDING1 = 0;
-	uint32_t PADDING2 = 0;
+	float near = 0.0f;
+	float far = 0.0f;
+	uint32_t PADDING0;
 };
 
 //stored in scene
@@ -35,10 +37,26 @@ struct SceneUniformBufferObject {
 	uint32_t deferredMode = 0;
 	uint32_t shadowMode = 0;
 	uint32_t lightCount = 0;
+	//for skin
 	float m = 0.0f;//roughness
 	float rho_s = 0.0f;//specularity factor
+	//for sub-surface scattering
 	float stretchAlpha = 0.0f;
 	float stretchBeta = 0.0f;
+	//for translucency
+	uint32_t tsmMode = 0;
+	float scattering = 0.0f;
+	float absorption = 0.0f;
+	float translucencyScale = 0.0f;
+	float translucencyPower = 0.0f;
+	float tsmBiasMax = 0.0f;
+	float tsmBiasMin = 0.0f;
+	float distortion = 0.0f;
+	float distanceScale = 0.0f;
+	//for shadow
+	float shadowBias = 0.0f;
+	float shadowScale = 0.0f;
+	uint32_t PADDING0 = 0;
 	LightData lightArr[MAX_LIGHTS_PER_SCENE];
 };
 
@@ -46,10 +64,13 @@ struct SceneUniformBufferObject {
 struct PassUniformBufferObject {
 	glm::mat4 view = glm::mat4(1);
 	glm::mat4 proj = glm::mat4(1);
+	glm::mat4 viewInv = glm::mat4(1);
+	glm::mat4 projInv = glm::mat4(1);
 	glm::vec4 cameraPosition = glm::vec4(0);
 	uint32_t passNum = 0;
-	uint32_t widthTex = 0;//if multiple textures are presented, only use the first one's width
-	uint32_t heightTex = 0;//if multiple textures are presented, only use the first one's height
+	float near = 0.0f;
+	float far = 0.0f;
+	uint32_t PADDING0;
 };
 
 //stored in mesh

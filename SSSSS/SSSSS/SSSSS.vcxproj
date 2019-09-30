@@ -154,8 +154,10 @@
     <None Include="GlobalIncludeVert.glsl" />
     <None Include="shadow.frag" />
     <None Include="shadow.vert" />
+    <None Include="shadowTSM.frag" />
     <None Include="skin.frag" />
     <None Include="skin.vert" />
+    <None Include="skinTSM.frag" />
     <None Include="standard.frag" />
     <None Include="standard.vert" />
   </ItemGroup>

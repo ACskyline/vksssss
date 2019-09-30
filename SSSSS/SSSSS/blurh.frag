@@ -15,7 +15,8 @@ float curve[7] = {0.006,0.061,0.242,0.383,0.242,0.061,0.006};
 void main()
 {
 	float depth = texture(texSamplerDiffuse, fragTexCoord).w;
-	vec2 deltaTexCoordU = vec2(1.0 / float(passUBO.widthTex), 0);
+	ivec2 texSize = textureSize(texSamplerBlurSrc, 0);
+	vec2 deltaTexCoordU = vec2(1.0 / float(texSize.x), 0);
 	float deltaDepthU = dFdx(depth);
 	float stretchU = sceneUBO.stretchAlpha / (depth + sceneUBO.stretchBeta * abs(deltaDepthU));
 	vec2 stretchedTexCoordU = stretchU * deltaTexCoordU;

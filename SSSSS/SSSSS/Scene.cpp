@@ -24,29 +24,39 @@ void Scene::InitScene(Renderer* _pRenderer, VkDescriptorPool descriptorPool)
 	pRenderer = _pRenderer;
 
 	//create uniform resources
-	CreateSceneUniformBuffer();
+	CreateSceneUniformBuffer(_pRenderer->frameCount);
 	pRenderer->CreateDescriptorSetLayoutTextureArray(
 		sceneDescriptorSetLayout,
 		0,
 		sUboCount,//only 1 sUBO
 		sUboCount,//only 1 sUBO, so offset is 1
-		{ static_cast<uint32_t>(pTextureVec.size()) });//texture array instead of texture
-	pRenderer->CreateDescriptorSet(
-		sceneDescriptorSet,
+		{ static_cast<uint32_t>(pTextureVec.size()),//texture arrays instead of textures
+		  static_cast<uint32_t>(pTextureVec2.size()) });//this is for aliasing of sampler2D and sampler2DShadow
+	sceneDescriptorSetVec.resize(_pRenderer->frameCount);
+	pRenderer->CreateDescriptorSets(
+		sceneDescriptorSetVec,
 		descriptorPool,
 		sceneDescriptorSetLayout);
 
-	//bind ubo
-	pRenderer->BindUniformBufferToDescriptorSets(sceneUniformBuffer, sizeof(sUBO), { sceneDescriptorSet }, 0);//only 1 sUBO
+	VkDeviceSize uboSize = sizeof(sUBO);
+	for (int i = 0; i < sceneDescriptorSetVec.size(); i++)
+	{
+		//bind ubo
+		VkDeviceSize uboOffset = _pRenderer->GetAlignedUboOffset(uboSize, i);
+		pRenderer->BindUniformBufferToDescriptorSets(sceneUniformBuffer, uboOffset, uboSize, { sceneDescriptorSetVec[i] }, 0);//only 1 sUBO
 
-	//bind texture array
-	//for (int i = 0; i < pTextureVec.size(); i++)
-	//{
-	//	pRenderer->BindTextureToDescriptorSets(pTextureVec[i]->GetTextureImageView(), pTextureVec[i]->GetSampler(), { sceneDescriptorSet }, sUboCount + 0, i);//only 1 sUBO, so offset is 1. since this is texture array, elementOffset is not 0 anymore
-	//}
+		//bind texture array
+		//for (int j = 0; j < pTextureVec.size(); i++)
+		//{
+		//	pRenderer->BindTextureToDescriptorSets(pTextureVec[j]->GetTextureImageView(), pTextureVec[j]->GetSampler(), { sceneDescriptorSet }, sUboCount + 0, j);//only 1 sUBO, so offset is 1. since this is texture array, elementOffset is not 0 anymore
+		//}
 
-	//same effect
-	pRenderer->BindTextureArrayToDescriptorSets(pTextureVec, { sceneDescriptorSet }, sUboCount + 0);
+		//another way to bind texture array
+		pRenderer->BindTextureArrayToDescriptorSets(pTextureVec, { sceneDescriptorSetVec[i] }, sUboCount + 0);
+		//an extra array to support alias of sampler2D and sampler2DShadow
+		pRenderer->BindTextureArrayToDescriptorSets(pTextureVec2, { sceneDescriptorSetVec[i] }, sUboCount + 1);
+	}
+
 }
 
 void Scene::CleanUp()
@@ -72,7 +82,7 @@ const std::vector<Pass*>& Scene::GetPassVec() const
 
 uint32_t Scene::GetTextureCount() const
 {
-	return static_cast<uint32_t>(pTextureVec.size());
+	return static_cast<uint32_t>(pTextureVec.size() * 2);//times 2 for alias of sampler2D and sampler2DShadow
 }
 
 VkBuffer Scene::GetSceneUniformBuffer() const
@@ -85,9 +95,14 @@ const SceneUniformBufferObject& Scene::GetSceneUniformBufferObject() const
 	return sUBO;
 }
 
-VkDescriptorSet* Scene::GetSceneDescriptorSetPtr()
+VkDescriptorSet* Scene::GetSceneDescriptorSetPtr(int frame)
 {
-	return &sceneDescriptorSet;
+	return sceneDescriptorSetVec.data() + frame;
+}
+
+int Scene::GetSceneDescriptorSetCount() const
+{
+	return sUboCount;
 }
 
 VkDescriptorSetLayout Scene::GetSceneDescriptorSetLayout() const
@@ -103,6 +118,7 @@ void Scene::AddLight(Light* pLight)
 	{
 		pLight->SetTextureIndex(static_cast<int32_t>(pTextureVec.size()));
 		pTextureVec.push_back(pLight->GetRenderTexturePtr());
+		pTextureVec2.push_back(pLight->GetRenderTexturePtr2());
 	}
 }
 
@@ -112,7 +128,7 @@ void Scene::AddPass(Pass* pPass)
 	pPass->SetScene(this);
 }
 
-void Scene::UpdateSceneUniformBuffer()
+void Scene::UpdateSceneUniformBuffer(int frame)
 {
 	uint32_t lightCount = static_cast<uint32_t>(pLightVec.size());
 	if (lightCount > MAX_LIGHTS_PER_SCENE)
@@ -123,20 +139,26 @@ void Scene::UpdateSceneUniformBuffer()
 	{
 		sUBO.lightArr[i].view = pLightVec[i]->GetViewMatrix();
 		sUBO.lightArr[i].proj = pLightVec[i]->GetProjectionMatrix();
+		sUBO.lightArr[i].viewInv = glm::inverse(sUBO.lightArr[i].view);
+		sUBO.lightArr[i].projInv = glm::inverse(sUBO.lightArr[i].proj);
 		sUBO.lightArr[i].color = glm::vec4(pLightVec[i]->GetColor(), 1);
 		sUBO.lightArr[i].position = glm::vec4(pLightVec[i]->GetPosition(), 1);
 		sUBO.lightArr[i].textureIndex = pLightVec[i]->GetTextureIndex();
+		sUBO.lightArr[i].near = pLightVec[i]->GetNear();
+		sUBO.lightArr[i].far = pLightVec[i]->GetFar();
 	}
 
 	void* data;
-	vkMapMemory(pRenderer->GetDevice(), sceneUniformBufferMemory, 0, sizeof(sUBO), 0, &data);
+	VkDeviceSize size = sizeof(sUBO);
+	VkDeviceSize offset = pRenderer->GetAlignedUboOffset(size, frame);
+	vkMapMemory(pRenderer->GetDevice(), sceneUniformBufferMemory, offset, size, 0, &data);
 	memcpy(data, &sUBO, sizeof(sUBO));
 	vkUnmapMemory(pRenderer->GetDevice(), sceneUniformBufferMemory);
 }
 
-void Scene::CreateSceneUniformBuffer()
+void Scene::CreateSceneUniformBuffer(int frameCount)
 {
-	VkDeviceSize bufferSize = sizeof(SceneUniformBufferObject);
+	VkDeviceSize bufferSize = pRenderer->GetAlignedUboSize(sizeof(SceneUniformBufferObject)) * frameCount;
 
 	pRenderer->CreateBuffer(bufferSize, 
 		VK_BUFFER_USAGE_UNIFORM_BUFFER_BIT, 
@@ -144,6 +166,9 @@ void Scene::CreateSceneUniformBuffer()
 		sceneUniformBuffer, 
 		sceneUniformBufferMemory);
 
-	//initial update
-	UpdateSceneUniformBuffer();
+	for (int i = 0; i < frameCount; i++)
+	{
+		//initial update
+		UpdateSceneUniformBuffer(i);
+	}
 }

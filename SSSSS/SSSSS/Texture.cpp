@@ -63,7 +63,7 @@ void Texture::CreateTextureImage()
 	stbi_uc* pixels = stbi_load(fileName.c_str(), &width, &height, &texChannels, STBI_rgb_alpha);
 	VkDeviceSize imageSize = width * height * 4;
 
-	if (!pixels) 
+	if (!pixels)
 	{
 		throw std::runtime_error("failed to load texture image!");
 	}
@@ -90,26 +90,26 @@ void Texture::CreateTextureImage()
 	//so we must inform Vulkan that we intend to use the texture image as both the source and destination of a transfer.
 	//Add VK_IMAGE_USAGE_TRANSFER_SRC_BIT to the texture image's usage flags
 	pRenderer->CreateImage(
-		width, 
-		height, 
+		width,
+		height,
 		mipLevels,
 		VK_SAMPLE_COUNT_1_BIT,
 		textureFormat,
 		VK_IMAGE_TILING_OPTIMAL,
 		filter == Filter::Trilinear ?
-			VK_IMAGE_USAGE_TRANSFER_SRC_BIT | VK_IMAGE_USAGE_TRANSFER_DST_BIT | VK_IMAGE_USAGE_SAMPLED_BIT :
-			VK_IMAGE_USAGE_TRANSFER_DST_BIT | VK_IMAGE_USAGE_SAMPLED_BIT,
+		VK_IMAGE_USAGE_TRANSFER_SRC_BIT | VK_IMAGE_USAGE_TRANSFER_DST_BIT | VK_IMAGE_USAGE_SAMPLED_BIT :
+		VK_IMAGE_USAGE_TRANSFER_DST_BIT | VK_IMAGE_USAGE_SAMPLED_BIT,
 		VK_MEMORY_PROPERTY_DEVICE_LOCAL_BIT,
-		textureImage, 
+		textureImage,
 		textureImageMemory);
 
 	//helper functions
 	pRenderer->TransitionImageLayout(
-		pRenderer->defaultCommandPool, 
-		textureImage, 
+		pRenderer->defaultCommandPool,
+		textureImage,
 		textureFormat,
-		VK_IMAGE_LAYOUT_UNDEFINED, 
-		VK_IMAGE_LAYOUT_TRANSFER_DST_OPTIMAL, 
+		VK_IMAGE_LAYOUT_UNDEFINED,
+		VK_IMAGE_LAYOUT_TRANSFER_DST_OPTIMAL,
 		mipLevels);
 
 	pRenderer->CopyBufferToImage(pRenderer->defaultCommandPool, stagingBuffer, textureImage, static_cast<uint32_t>(width), static_cast<uint32_t>(height));
@@ -122,8 +122,19 @@ void Texture::CreateTextureImage()
 			pRenderer->defaultCommandPool,
 			textureImage,
 			textureFormat,
+			VK_IMAGE_LAYOUT_SHADER_READ_ONLY_OPTIMAL,
 			width,
 			height,
+			mipLevels);
+	}
+	else
+	{
+		pRenderer->TransitionImageLayout(
+			pRenderer->defaultCommandPool,
+			textureImage,
+			textureFormat,
+			VK_IMAGE_LAYOUT_TRANSFER_DST_OPTIMAL,
+			VK_IMAGE_LAYOUT_SHADER_READ_ONLY_OPTIMAL,
 			mipLevels);
 	}
 }
@@ -391,7 +402,7 @@ void RenderTexture::CreateRenderTextureImage()
 			depthStencilImage,
 			depthStencilImageMemory);
 		depthStencilImageView = pRenderer->CreateImageView(depthStencilImage, depthStencilFormat, VK_IMAGE_ASPECT_DEPTH_BIT | VK_IMAGE_ASPECT_STENCIL_BIT, 1);
-		pRenderer->TransitionImageLayout(pRenderer->defaultCommandPool, depthStencilImage, depthStencilFormat, VK_IMAGE_LAYOUT_UNDEFINED, VK_IMAGE_LAYOUT_DEPTH_STENCIL_ATTACHMENT_OPTIMAL, 1);
+		pRenderer->TransitionImageLayout(pRenderer->defaultCommandPool, depthStencilImage, depthStencilFormat, VK_IMAGE_LAYOUT_UNDEFINED, VK_IMAGE_LAYOUT_DEPTH_STENCIL_ATTACHMENT_OPTIMAL, mipLevels);
 		currentDepthStencilLayout = VK_IMAGE_LAYOUT_DEPTH_STENCIL_ATTACHMENT_OPTIMAL;
 	}
 
@@ -402,7 +413,7 @@ void RenderTexture::CreateRenderTextureImage()
 			static_cast<uint32_t>(width),
 			static_cast<uint32_t>(height),
 			mipLevels,
-			VK_SAMPLE_COUNT_1_BIT,//no msaa
+			supportMsaa ? msaaSamples : VK_SAMPLE_COUNT_1_BIT,//msaa
 			textureFormat,
 			VK_IMAGE_TILING_OPTIMAL,
 			readFrom == ReadFrom::Color ? 
@@ -415,15 +426,17 @@ void RenderTexture::CreateRenderTextureImage()
 			VK_MEMORY_PROPERTY_DEVICE_LOCAL_BIT,
 			textureImage,
 			textureImageMemory);
-		colorImageView = pRenderer->CreateImageView(textureImage, textureFormat, VK_IMAGE_ASPECT_COLOR_BIT, mipLevels);
-		pRenderer->TransitionImageLayout(pRenderer->defaultCommandPool, textureImage, textureFormat, VK_IMAGE_LAYOUT_UNDEFINED, VK_IMAGE_LAYOUT_COLOR_ATTACHMENT_OPTIMAL, 1);
+		//VkFramebufferCreateInfo attachment #0 has mip levelCount of 10 but only a single mip level(levelCount == 1) is allowed 
+		//when creating a Framebuffer.The Vulkan spec states : Each element of pAttachments must only specify a single mip level
+		//(https ://www.khronos.org/registry/vulkan/specs/1.1-extensions/html/vkspec.html#VUID-VkFramebufferCreateInfo-pAttachments-00883)
+		colorImageView = pRenderer->CreateImageView(textureImage, textureFormat, VK_IMAGE_ASPECT_COLOR_BIT, 1);
+		pRenderer->TransitionImageLayout(pRenderer->defaultCommandPool, textureImage, textureFormat, VK_IMAGE_LAYOUT_UNDEFINED, VK_IMAGE_LAYOUT_COLOR_ATTACHMENT_OPTIMAL, mipLevels);//1 is enough but to make transition code easier use mipLevels here
 		currentColorLayout = VK_IMAGE_LAYOUT_COLOR_ATTACHMENT_OPTIMAL;
 	}
 }
 
 void RenderTexture::TransitionColorLayoutToWrite(VkCommandBuffer commandBuffer)
 {
-
 	VkImageMemoryBarrier barrier = {};
 	barrier.sType = VK_STRUCTURE_TYPE_IMAGE_MEMORY_BARRIER;
 	barrier.oldLayout = currentColorLayout;
@@ -481,6 +494,38 @@ void RenderTexture::TransitionColorLayoutToRead(VkCommandBuffer commandBuffer)
 		1, &barrier);
 
 	currentColorLayout = VK_IMAGE_LAYOUT_SHADER_READ_ONLY_OPTIMAL;
+}
+
+//for generating mip maps
+void RenderTexture::TransitionColorLayoutToTransferDst(VkCommandBuffer commandBuffer)
+{
+	VkImageMemoryBarrier barrier = {};
+	barrier.sType = VK_STRUCTURE_TYPE_IMAGE_MEMORY_BARRIER;
+	barrier.oldLayout = currentColorLayout;
+	barrier.newLayout = VK_IMAGE_LAYOUT_TRANSFER_DST_OPTIMAL;
+	barrier.image = textureImage;
+	barrier.srcQueueFamilyIndex = pRenderer->GetGraphicsQueueFamilyIndex();
+	barrier.dstQueueFamilyIndex = pRenderer->GetGraphicsQueueFamilyIndex();
+	barrier.srcAccessMask = VK_ACCESS_COLOR_ATTACHMENT_WRITE_BIT;
+	barrier.dstAccessMask = VK_ACCESS_TRANSFER_WRITE_BIT;
+	barrier.subresourceRange.aspectMask = VK_IMAGE_ASPECT_COLOR_BIT;
+	barrier.subresourceRange.baseArrayLayer = 0;
+	barrier.subresourceRange.baseMipLevel = 0;
+	barrier.subresourceRange.layerCount = 1;
+	barrier.subresourceRange.levelCount = mipLevels;
+
+	VkPipelineStageFlags srcStage = VK_PIPELINE_STAGE_COLOR_ATTACHMENT_OUTPUT_BIT;
+	VkPipelineStageFlags dstStage = VK_PIPELINE_STAGE_TRANSFER_BIT;
+
+	vkCmdPipelineBarrier(
+		commandBuffer,
+		srcStage, dstStage,
+		0,
+		0, nullptr,
+		0, nullptr,
+		1, &barrier);
+
+	currentColorLayout = VK_IMAGE_LAYOUT_TRANSFER_DST_OPTIMAL;
 }
 
 void RenderTexture::TransitionDepthStencilLayoutToWrite(VkCommandBuffer commandBuffer)
@@ -542,4 +587,19 @@ void RenderTexture::TransitionDepthStencilLayoutToRead(VkCommandBuffer commandBu
 		1, &barrier);
 
 	currentDepthStencilLayout = VK_IMAGE_LAYOUT_SHADER_READ_ONLY_OPTIMAL;
+}
+
+//expect image to be in transfer dst layout
+void RenderTexture::GenerateMipMapsAndTransitionColorLayout(VkCommandBuffer commandBuffer, VkImageLayout newLayout)
+{
+	pRenderer->GenerateMipmaps(
+		commandBuffer,
+		textureImage,
+		textureFormat,
+		newLayout,
+		width,
+		height,
+		mipLevels);
+
+	currentColorLayout = newLayout;
 }

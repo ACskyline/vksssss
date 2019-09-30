@@ -19,6 +19,8 @@ public:
 	void InitCamera();
 	glm::mat4 GetProjectionMatrix() const;
 	glm::mat4 GetViewMatrix() const;
+	float GetNear() const;
+	float GetFar() const;
 
 	void CleanUp();
 

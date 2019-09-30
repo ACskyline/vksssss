@@ -54,7 +54,8 @@ public:
 	const std::vector<Mesh*>& GetMeshVec() const;
 	const std::vector<Texture*>& GetTextureVec() const;
 	const PassUniformBufferObject& GetPassUniformBufferObject() const;
-	VkDescriptorSet* GetPassDescriptorSetPtr();
+	VkDescriptorSet* GetPassDescriptorSetPtr(int frame);
+	int GetPassDescriptorSetCount() const;
 	VkBuffer GetPassUniformBuffer() const;
 	Camera* GetCamera() const;
 	Scene* GetScene() const;
@@ -84,7 +85,7 @@ public:
 
 	void CleanUp();
 
-	void UpdatePassUniformBuffer(Camera* _pCamera);
+	void UpdatePassUniformBuffer(int frame, Camera* _pCamera);
 
 private:
 	Renderer* pRenderer;
@@ -114,7 +115,7 @@ private:
 	PassUniformBufferObject pUBO;
 	VkBuffer passUniformBuffer;
 	VkDeviceMemory passUniformBufferMemory;
-	VkDescriptorSet passDescriptorSet;
+	std::vector<VkDescriptorSet> passDescriptorSetVec;
 	VkDescriptorSetLayout passDescriptorSetLayout;
 
 	//render texture property
@@ -123,6 +124,6 @@ private:
 	VkExtent2D extent;
 
 	//vulkan functions
-	void UpdatePassUniformBuffer();
-	void CreatePassUniformBuffer();
+	void UpdatePassUniformBuffer(int frame);
+	void CreatePassUniformBuffer(int frameCount);
 };

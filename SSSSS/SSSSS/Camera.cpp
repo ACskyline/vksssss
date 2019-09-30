@@ -51,6 +51,16 @@ glm::mat4 Camera::GetViewMatrix() const
 	return mat;
 }
 
+float Camera::GetNear() const
+{
+	return near;
+}
+
+float Camera::GetFar() const
+{
+	return far;
+}
+
 OrbitCamera::OrbitCamera(
 	const std::string& _name,
 	float _distance,

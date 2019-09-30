@@ -40,7 +40,7 @@ void Frame::InitFrame(Renderer* _pRenderer, VkDescriptorPool descriptorPool)
 		frameDescriptorSetLayout);
 
 	//bind ubo
-	pRenderer->BindUniformBufferToDescriptorSets(frameUniformBuffer, sizeof(fUBO), { frameDescriptorSet }, 0);//only 1 fUBO
+	pRenderer->BindUniformBufferToDescriptorSets(frameUniformBuffer, 0, sizeof(fUBO), { frameDescriptorSet }, 0);//only 1 fUBO
 
 	//bind texture
 	for (int i = 0; i < pTextureVec.size(); i++)

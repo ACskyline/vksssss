@@ -116,6 +116,12 @@
     <None Include="blurv.frag">
       <Filter>Resource Files</Filter>
     </None>
+    <None Include="shadowTSM.frag">
+      <Filter>Resource Files</Filter>
+    </None>
+    <None Include="skinTSM.frag">
+      <Filter>Resource Files</Filter>
+    </None>
   </ItemGroup>
   <ItemGroup>
     <ClInclude Include="Shader.h">

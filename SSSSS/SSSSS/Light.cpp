@@ -7,7 +7,8 @@ Light::Light(
 	const glm::vec3& _color,
 	const glm::vec3& _position,
 	Camera* _pCamera,
-	RenderTexture* _pRenderTexture) 
+	RenderTexture* _pRenderTexture,
+	RenderTexture* _pRenderTexture2) 
 	:
 	name(_name), 
 	color(_color), 
@@ -15,6 +16,7 @@ Light::Light(
 	pScene(nullptr),
 	pCamera(_pCamera),
 	pRenderTexture(_pRenderTexture),
+	pRenderTexture2(_pRenderTexture2),
 	textureIndex(-1)
 {
 }
@@ -34,6 +36,21 @@ void Light::CleanUp()
 	//do nothing
 }
 
+float Light::GetNear() const
+{
+	if (pCamera != nullptr)
+		return pCamera->GetNear();
+	else
+		return 0.0f;
+}
+
+float Light::GetFar() const
+{
+	if (pCamera != nullptr)
+		return pCamera->GetFar();
+	else
+		return 0.0f;
+}
 
 const glm::vec3& Light::GetColor() const
 {
@@ -47,12 +64,10 @@ const glm::vec3& Light::GetPosition() const
 
 glm::mat4 Light::GetProjectionMatrix() const
 {
-	glm::mat4 mat(1);
 	if (pCamera != nullptr)
-	{
 		return pCamera->GetProjectionMatrix();
-	}
-	return mat;
+	else
+		return glm::mat4(1);
 }
 
 glm::mat4 Light::GetViewMatrix() const
@@ -68,6 +83,11 @@ glm::mat4 Light::GetViewMatrix() const
 RenderTexture* Light::GetRenderTexturePtr() const
 {
 	return pRenderTexture;
+}
+
+RenderTexture* Light::GetRenderTexturePtr2() const
+{
+	return pRenderTexture2 == nullptr ? pRenderTexture : pRenderTexture2;
 }
 
 int32_t Light::GetTextureIndex() const

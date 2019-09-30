@@ -199,9 +199,14 @@ const PassUniformBufferObject& Pass::GetPassUniformBufferObject() const
 	return pUBO;
 }
 
-VkDescriptorSet* Pass::GetPassDescriptorSetPtr()
+VkDescriptorSet* Pass::GetPassDescriptorSetPtr(int frame)
 {
-	return &passDescriptorSet;
+	return passDescriptorSetVec.data() + frame;
+}
+
+int Pass::GetPassDescriptorSetCount() const
+{
+	return passDescriptorSetVec.size();
 }
 
 VkRenderPass Pass::GetRenderPass() const
@@ -271,25 +276,31 @@ void Pass::InitPass(
 
 	pRenderer = _pRenderer;
 	//create uniform resources
-	CreatePassUniformBuffer();
+	CreatePassUniformBuffer(_pRenderer->frameCount);
 	pRenderer->CreateDescriptorSetLayout(
 		passDescriptorSetLayout,
 		0,
 		pUboCount,//only 1 pUBO
 		pUboCount,//only 1 pUBO, so offset is 1
 		static_cast<uint32_t>(pTextureVec.size()));
-	pRenderer->CreateDescriptorSet(
-		passDescriptorSet,
+	passDescriptorSetVec.resize(_pRenderer->frameCount);
+	pRenderer->CreateDescriptorSets(
+		passDescriptorSetVec,
 		descriptorPool,
 		passDescriptorSetLayout);
 
-	//bind ubo
-	pRenderer->BindUniformBufferToDescriptorSets(passUniformBuffer, sizeof(pUBO), { passDescriptorSet }, 0);//only 1 pUBO
-
-	//bind texture
-	for (int i = 0; i < pTextureVec.size(); i++)
+	VkDeviceSize uboSize = sizeof(pUBO);
+	for (int i = 0; i < passDescriptorSetVec.size(); i++)
 	{
-		pRenderer->BindTextureToDescriptorSets(pTextureVec[i]->GetTextureImageView(), pTextureVec[i]->GetSampler(), { passDescriptorSet }, 1 + i);//only 1 pUBO, so offset is 1
+		//bind ubo
+		VkDeviceSize uboOffset = _pRenderer->GetAlignedUboOffset(uboSize, i);
+		pRenderer->BindUniformBufferToDescriptorSets(passUniformBuffer, uboOffset, uboSize, { passDescriptorSetVec[i] }, 0);//only 1 pUBO
+
+		//bind texture
+		for (int j = 0; j < pTextureVec.size(); j++)
+		{
+			pRenderer->BindTextureToDescriptorSets(pTextureVec[j]->GetTextureImageView(), pTextureVec[j]->GetSampler(), { passDescriptorSetVec[i] }, pUboCount + j);//only 1 pUBO, so offset is 1
+		}
 	}
 
 	//renderPass, extent and framebuffer
@@ -338,14 +349,14 @@ void Pass::InitPass(
 	}
 }
 
-void Pass::UpdatePassUniformBuffer()
+void Pass::UpdatePassUniformBuffer(int frame)
 {
-	UpdatePassUniformBuffer(pCamera);
+	UpdatePassUniformBuffer(frame, pCamera);
 }
 
-void Pass::CreatePassUniformBuffer()
+void Pass::CreatePassUniformBuffer(int frameCount)
 {
-	VkDeviceSize bufferSize = sizeof(PassUniformBufferObject);
+	VkDeviceSize bufferSize = pRenderer->GetAlignedUboSize(sizeof(PassUniformBufferObject)) * frameCount;
 
 	pRenderer->CreateBuffer(bufferSize,
 		VK_BUFFER_USAGE_UNIFORM_BUFFER_BIT,
@@ -354,7 +365,10 @@ void Pass::CreatePassUniformBuffer()
 		passUniformBufferMemory);
 
 	//initial update
-	UpdatePassUniformBuffer();
+	for (int i = 0; i < frameCount; i++)
+	{
+		UpdatePassUniformBuffer(i);
+	}
 }
 
 void Pass::CleanUp()
@@ -370,17 +384,21 @@ void Pass::CleanUp()
 	}
 }
 
-void Pass::UpdatePassUniformBuffer(Camera* _pCamera)
+void Pass::UpdatePassUniformBuffer(int frame, Camera* _pCamera)
 {
 	pUBO.view = _pCamera->GetViewMatrix();
 	pUBO.proj = _pCamera->GetProjectionMatrix();
+	pUBO.viewInv = glm::inverse(pUBO.view);
+	pUBO.projInv = glm::inverse(pUBO.proj);
 	pUBO.cameraPosition = glm::vec4(_pCamera->position, 1.0);
 	pUBO.passNum = 100;
-	pUBO.widthTex = pTextureVec.size() > 0 ? pTextureVec[0]->GetWidth() : 0;
-	pUBO.heightTex = pTextureVec.size() > 0 ? pTextureVec[0]->GetHeight() : 0;
+	pUBO.near = _pCamera->GetNear();
+	pUBO.far = _pCamera->GetFar();
 
 	void* data;
-	vkMapMemory(pRenderer->GetDevice(), passUniformBufferMemory, 0, sizeof(pUBO), 0, &data);
+	VkDeviceSize size = sizeof(pUBO);
+	VkDeviceSize offset = pRenderer->GetAlignedUboOffset(size, frame);
+	vkMapMemory(pRenderer->GetDevice(), passUniformBufferMemory, offset, size, 0, &data);
 	memcpy(data, &pUBO, sizeof(pUBO));
 	vkUnmapMemory(pRenderer->GetDevice(), passUniformBufferMemory);
 }

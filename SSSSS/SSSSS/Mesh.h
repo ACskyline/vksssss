@@ -17,15 +17,20 @@ public:
 	VkBuffer GetObjectUniformBuffer() const;
 	VkBuffer GetVertexBuffer() const;
 	VkBuffer GetIndexBuffer() const;
-	VkDescriptorSet* GetObjectDescriptorSetPtr();
+	VkDescriptorSet* GetObjectDescriptorSetPtr(int frame);
+	int GetObjectDescriptorSetCount() const;
 	const std::vector<uint32_t>& GetIndexVec() const;
 	uint32_t GetTextureCount() const;
 	uint32_t GetUboCount() const;
 	VkDescriptorSetLayout GetObjectDescriptorSetLayout() const;
+	void UpdateObjectUniformBuffer(int frame);
 
 	void InitMesh(Renderer* _pRenderer, VkDescriptorPool descriptorPool);
 	void CleanUp();
 
+	glm::vec3 position;
+	glm::vec3 scale;
+	glm::vec3 rotation;
 private:
 	struct Point
 	{
@@ -38,9 +43,6 @@ private:
 	std::string name;
 	const uint32_t oUboCount = 1;
 	MeshType type;
-	glm::vec3 position;
-	glm::vec3 scale;
-	glm::vec3 rotation;
 
 	//assets
 	std::vector<Texture*> pTextureVec;
@@ -57,12 +59,11 @@ private:
 	ObjectUniformBufferObject oUBO;
 	VkBuffer objectUniformBuffer;
 	VkDeviceMemory objectUniformBufferMemory;
-	VkDescriptorSet objectDescriptorSet;
+	std::vector<VkDescriptorSet> objectDescriptorSetVec;
 	VkDescriptorSetLayout objectDescriptorSetLayout;
 
 	//vulkan functions
-	void UpdateObjectUniformBuffer();
-	void CreateObjectUniformBuffer();
+	void CreateObjectUniformBuffer(int frameCount);
 	void CreateVertexBuffer();
 	void CreateIndexBuffer();
 

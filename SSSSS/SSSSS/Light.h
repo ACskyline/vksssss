@@ -13,14 +13,18 @@ public:
 		const glm::vec3& _color,
 		const glm::vec3& _position,
 		Camera* _pCamera,
-		RenderTexture* _pRenderTexture);
+		RenderTexture* _pRenderTexture,
+		RenderTexture* _pRenderTexture2 = nullptr);
 	~Light();
 
+	float GetNear() const;
+	float GetFar() const;
 	const glm::vec3& GetColor() const;
 	const glm::vec3& GetPosition() const;
 	glm::mat4 GetProjectionMatrix() const;
 	glm::mat4 GetViewMatrix() const;
 	RenderTexture* GetRenderTexturePtr() const;
+	RenderTexture* GetRenderTexturePtr2() const;//for TSM
 	int32_t GetTextureIndex() const;
 
 	void SetTextureIndex(int32_t index);
@@ -37,4 +41,5 @@ private:
 	Scene* pScene;//a light is bound to a scene
 	Camera* pCamera;
 	RenderTexture* pRenderTexture;
+	RenderTexture* pRenderTexture2;//for TSM
 };

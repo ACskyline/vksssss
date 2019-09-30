@@ -83,9 +83,12 @@ public:
 
 	void TransitionColorLayoutToWrite(VkCommandBuffer commandBuffer);
 	void TransitionColorLayoutToRead(VkCommandBuffer commandBuffer);
+	void TransitionColorLayoutToTransferDst(VkCommandBuffer commandBuffer);
 
 	void TransitionDepthStencilLayoutToWrite(VkCommandBuffer commandBuffer);
 	void TransitionDepthStencilLayoutToRead(VkCommandBuffer commandBuffer);
+
+	void GenerateMipMapsAndTransitionColorLayout(VkCommandBuffer commandBuffer, VkImageLayout newLayout);
 
 private:
 

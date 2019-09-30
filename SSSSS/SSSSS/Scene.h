@@ -18,7 +18,8 @@ public:
 	uint32_t GetTextureCount() const;
 	VkBuffer GetSceneUniformBuffer() const;
 	const SceneUniformBufferObject& GetSceneUniformBufferObject() const;
-	VkDescriptorSet* GetSceneDescriptorSetPtr();
+	VkDescriptorSet* GetSceneDescriptorSetPtr(int frame);
+	int GetSceneDescriptorSetCount() const;
 	VkDescriptorSetLayout GetSceneDescriptorSetLayout() const;
 
 	void AddPass(Pass* pPass);
@@ -29,7 +30,7 @@ public:
 	void CleanUp();
 
 	//vulkan functions
-	void UpdateSceneUniformBuffer();
+	void UpdateSceneUniformBuffer(int frame);
 
 	//scene uniform
 	SceneUniformBufferObject sUBO;
@@ -42,14 +43,15 @@ private:
 	//asset containers
 	std::vector<Pass*> pPassVec;
 	std::vector<Texture*> pTextureVec;//this is a texture array (currently for lights only) instead of multiple textures in the shader
+	std::vector<Texture*> pTextureVec2;//this is a 2nd texture array (currently for lights only) instead of multiple textures in the shader
 	std::vector<Light*> pLightVec;
 
 	//scene uniform
 	VkBuffer sceneUniformBuffer;
 	VkDeviceMemory sceneUniformBufferMemory;
-	VkDescriptorSet sceneDescriptorSet;
+	std::vector<VkDescriptorSet> sceneDescriptorSetVec;
 	VkDescriptorSetLayout sceneDescriptorSetLayout;
 
 	//vulkan functions
-	void CreateSceneUniformBuffer();
+	void CreateSceneUniformBuffer(int frameCount);
 };

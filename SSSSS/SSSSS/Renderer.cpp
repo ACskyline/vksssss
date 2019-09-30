@@ -14,8 +14,8 @@
 #include "Level.h"
 #include "Texture.h"
 
-Renderer::Renderer(int _width, int _height, int _framesInFlight)
-	: width(_width), height(_height), framesInFlight(_framesInFlight)
+Renderer::Renderer(int _width, int _height, int _frameCount)
+	: width(_width), height(_height), frameCount(_frameCount)
 {
 }
 
@@ -59,42 +59,45 @@ void Renderer::InitAssets()
 	uint32_t pUboCount = 0;
 	uint32_t oUboCount = 0;
 	uint32_t fUboCount = 0;
-	uint32_t sceneCount = 0;
-	uint32_t passCount = 0;
-	uint32_t objectCount = 0;
-	uint32_t frameCount = 0;
+	uint32_t sceneSetCount = 0;
+	uint32_t passSetCount = 0;
+	uint32_t objectSetCount = 0;
+	uint32_t frameSetCount = 0;
 	uint32_t sTextureCount = 0;
 	uint32_t pTextureCount = 0;
 	uint32_t oTextureCount = 0;
 	uint32_t fTextureCount = 0;
 
+	//1 scene/pass/mesh contains multiple descriptors (1 for each frame)
+	int frameCount = frameVec.size();
 	for (auto level : pLevelVec)
 	{
-		sceneCount += static_cast<uint32_t>(level->GetSceneVec().size());
 		for (auto scene : level->GetSceneVec())
 		{
-			sUboCount += scene->GetUboCount();
-			sTextureCount += scene->GetTextureCount();
+			sceneSetCount += frameCount;
+			sUboCount += scene->GetUboCount() * frameCount;
+			sTextureCount += scene->GetTextureCount() * frameCount;
 		}
 
-		passCount += static_cast<uint32_t>(level->GetPassVec().size());
 		for (auto pass : level->GetPassVec())
 		{
-			pUboCount += pass->GetUboCount();
-			pTextureCount += pass->GetTextureCount();
+			passSetCount += frameCount;
+			pUboCount += pass->GetUboCount() * frameCount;
+			pTextureCount += pass->GetTextureCount() * frameCount;
 		}
 
-		objectCount += static_cast<uint32_t>(level->GetMeshVec().size());
 		for (auto mesh : level->GetMeshVec())
 		{
-			oUboCount += mesh->GetUboCount();
-			oTextureCount += mesh->GetTextureCount();
+			objectSetCount += frameCount;
+			oUboCount += mesh->GetUboCount() * frameCount;
+			oTextureCount += mesh->GetTextureCount() * frameCount;
 		}
 	}
 
-	frameCount += static_cast<uint32_t>(frameVec.size());
+	//1 descriptor set per frame
 	for (auto& frame : frameVec)
 	{
+		frameSetCount += 1;
 		fUboCount += frame.GetUboCount();
 		fTextureCount += frame.GetTextureCount();
 	}
@@ -102,7 +105,7 @@ void Renderer::InitAssets()
 	//create descriptor pool
 	CreateDescriptorPool(
 		defaultDescriptorPool,
-		frameCount + sceneCount + passCount + objectCount,
+		frameSetCount + sceneSetCount + passSetCount + objectSetCount,
 		sUboCount + pUboCount + oUboCount + fUboCount,
 		sTextureCount + pTextureCount + oTextureCount + fTextureCount);
 
@@ -119,6 +122,12 @@ void Renderer::InitAssets()
 	}
 }
 
+
+int Renderer::GetNextFrame(int frame)
+{
+	return (frame + 1) % frameCount;
+}
+
 // ~ get general vulkan resources ~
 
 VkDevice Renderer::GetDevice() const
@@ -129,6 +138,19 @@ VkDevice Renderer::GetDevice() const
 VkPhysicalDevice Renderer::GetPhysicalDevice() const
 {
 	return physicalDevice;
+}
+
+VkDeviceSize Renderer::GetAlignedUboOffset(int size, int index) const
+{
+	return index * GetAlignedUboSize(size);
+}
+
+VkDeviceSize Renderer::GetAlignedUboSize(int size) const
+{
+	VkDeviceSize lowerMask = physicalDeviceLimits.minUniformBufferOffsetAlignment - 1;
+	VkDeviceSize lower = size & lowerMask;
+	VkDeviceSize higher = size - lower;
+	return lower ? higher + physicalDeviceLimits.minUniformBufferOffsetAlignment : higher;
 }
 
 VkInstance Renderer::GetInstance() const
@@ -283,7 +305,7 @@ void Renderer::TransitionImageLayout(VkCommandPool commandPool, VkImage image, V
 
 	if (oldLayout == VK_IMAGE_LAYOUT_UNDEFINED && newLayout == VK_IMAGE_LAYOUT_TRANSFER_DST_OPTIMAL) 
 	{
-		// ~ this is for generating mip map ~
+		// ~ this is for pre generating mip map (post generating mip map transition is in GenerateMipmaps function) ~
 		
 		//One thing to note is that command buffer submission results in implicit VK_ACCESS_HOST_WRITE_BIT synchronization at the beginning.
 		//Since the transitionImageLayout function executes a command buffer with only a single command, 
@@ -296,7 +318,7 @@ void Renderer::TransitionImageLayout(VkCommandPool commandPool, VkImage image, V
 	}
 	else if (oldLayout == VK_IMAGE_LAYOUT_TRANSFER_DST_OPTIMAL && newLayout == VK_IMAGE_LAYOUT_SHADER_READ_ONLY_OPTIMAL) 
 	{
-		// ~ this is for texture ~
+		// ~ this is for coping texture (the ones don't have to generate mip map) ~
 
 		barrier.srcAccessMask = VK_ACCESS_TRANSFER_WRITE_BIT;
 		barrier.dstAccessMask = VK_ACCESS_SHADER_READ_BIT;
@@ -365,7 +387,14 @@ void Renderer::CopyBufferToImage(VkCommandPool commandPool, VkBuffer buffer, VkI
 	EndSingleTimeCommands(commandBuffer, commandPool);
 }
 
-void Renderer::GenerateMipmaps(VkCommandPool commandPool, VkImage image, VkFormat imageFormat, int32_t texWidth, int32_t texHeight, uint32_t mipLevels)
+void Renderer::GenerateMipmaps(
+	VkCommandPool commandPool, 
+	VkImage image, 
+	VkFormat imageFormat,
+	VkImageLayout newLayout,  
+	int32_t texWidth, 
+	int32_t texHeight, 
+	uint32_t mipLevels)
 {
 	//It is very convenient to use a built - in function like vkCmdBlitImage to generate all the mip levels, 
 	//but unfortunately it is not guaranteed to be supported on all platforms.
@@ -437,7 +466,7 @@ void Renderer::GenerateMipmaps(VkCommandPool commandPool, VkImage image, VkForma
 
 		//trainsition i - 1 miplevel from TRANSFER_SRC to SHADER_READ_ONLY
 		barrier.oldLayout = VK_IMAGE_LAYOUT_TRANSFER_SRC_OPTIMAL;//DIFFERENT, all mip levels except for the last one must transfer from TRANSFER_SRC to SHADER_READ_ONLY
-		barrier.newLayout = VK_IMAGE_LAYOUT_SHADER_READ_ONLY_OPTIMAL;
+		barrier.newLayout = newLayout;// VK_IMAGE_LAYOUT_SHADER_READ_ONLY_OPTIMAL;
 		barrier.srcAccessMask = VK_ACCESS_TRANSFER_READ_BIT;
 		barrier.dstAccessMask = VK_ACCESS_SHADER_READ_BIT;
 
@@ -454,7 +483,7 @@ void Renderer::GenerateMipmaps(VkCommandPool commandPool, VkImage image, VkForma
 	//trainsition the last miplevel from TRANSFER_DST to SHADER_READ_ONLY
 	barrier.subresourceRange.baseMipLevel = mipLevels - 1;
 	barrier.oldLayout = VK_IMAGE_LAYOUT_TRANSFER_DST_OPTIMAL;//DIFFERENT, last mip level transfer from TRANSFER_DST to SHADER_READ_ONLY
-	barrier.newLayout = VK_IMAGE_LAYOUT_SHADER_READ_ONLY_OPTIMAL;
+	barrier.newLayout = newLayout;// VK_IMAGE_LAYOUT_SHADER_READ_ONLY_OPTIMAL;
 	barrier.srcAccessMask = VK_ACCESS_TRANSFER_WRITE_BIT;
 	barrier.dstAccessMask = VK_ACCESS_SHADER_READ_BIT;
 
@@ -465,6 +494,114 @@ void Renderer::GenerateMipmaps(VkCommandPool commandPool, VkImage image, VkForma
 		1, &barrier);
 
 	EndSingleTimeCommands(commandBuffer, commandPool);
+}
+
+void Renderer::GenerateMipmaps(
+	VkCommandBuffer commandBuffer, 
+	VkImage image, 
+	VkFormat imageFormat, 
+	VkImageLayout newLayout, 
+	int32_t texWidth, 
+	int32_t texHeight, 
+	uint32_t mipLevels)
+{
+	//It is very convenient to use a built - in function like vkCmdBlitImage to generate all the mip levels, 
+	//but unfortunately it is not guaranteed to be supported on all platforms.
+	//It requires the texture image format we use to support linear filtering, 
+	//which can be checked with the vkGetPhysicalDeviceFormatProperties function.
+
+	//skip the check when generating every frame
+	/*
+	// Check if image format supports linear blitting
+	VkFormatProperties formatProperties;
+	vkGetPhysicalDeviceFormatProperties(physicalDevice, imageFormat, &formatProperties);
+
+	if (!(formatProperties.optimalTilingFeatures & VK_FORMAT_FEATURE_SAMPLED_IMAGE_FILTER_LINEAR_BIT)) {
+		//TODO:
+		//There are two alternatives in this case.
+		//You could implement a function that searches common texture image formats for one that does support linear blitting, 
+		//or you could implement the mipmap generation in software with a library like stb_image_resize.
+		//Each mip level can then be loaded into the image in the same way that you loaded the original image.
+		throw std::runtime_error("texture image format does not support linear blitting!");
+	}
+	*/
+
+	VkImageMemoryBarrier barrier = {};
+	barrier.sType = VK_STRUCTURE_TYPE_IMAGE_MEMORY_BARRIER;
+	barrier.image = image;
+	barrier.srcQueueFamilyIndex = VK_QUEUE_FAMILY_IGNORED;
+	barrier.dstQueueFamilyIndex = VK_QUEUE_FAMILY_IGNORED;
+	barrier.subresourceRange.aspectMask = VK_IMAGE_ASPECT_COLOR_BIT;
+	barrier.subresourceRange.baseArrayLayer = 0;
+	barrier.subresourceRange.layerCount = 1;
+	barrier.subresourceRange.levelCount = 1;
+
+	int32_t mipWidth = texWidth;
+	int32_t mipHeight = texHeight;
+
+	for (uint32_t i = 1; i < mipLevels; i++) {
+		barrier.subresourceRange.baseMipLevel = i - 1;
+		barrier.oldLayout = VK_IMAGE_LAYOUT_TRANSFER_DST_OPTIMAL;
+		barrier.newLayout = VK_IMAGE_LAYOUT_TRANSFER_SRC_OPTIMAL;
+		barrier.srcAccessMask = VK_ACCESS_TRANSFER_WRITE_BIT;
+		barrier.dstAccessMask = VK_ACCESS_TRANSFER_READ_BIT;
+
+		//trainsition i - 1 miplevel from DST to SRC
+		vkCmdPipelineBarrier(commandBuffer,
+			VK_PIPELINE_STAGE_TRANSFER_BIT, VK_PIPELINE_STAGE_TRANSFER_BIT, 0,
+			0, nullptr,
+			0, nullptr,
+			1, &barrier);
+
+		VkImageBlit blit = {};
+		blit.srcOffsets[0] = { 0, 0, 0 };
+		blit.srcOffsets[1] = { mipWidth, mipHeight, 1 };
+		blit.srcSubresource.aspectMask = VK_IMAGE_ASPECT_COLOR_BIT;
+		blit.srcSubresource.mipLevel = i - 1;
+		blit.srcSubresource.baseArrayLayer = 0;
+		blit.srcSubresource.layerCount = 1;
+		blit.dstOffsets[0] = { 0, 0, 0 };
+		blit.dstOffsets[1] = { mipWidth > 1 ? mipWidth / 2 : 1, mipHeight > 1 ? mipHeight / 2 : 1, 1 };
+		blit.dstSubresource.aspectMask = VK_IMAGE_ASPECT_COLOR_BIT;
+		blit.dstSubresource.mipLevel = i;
+		blit.dstSubresource.baseArrayLayer = 0;
+		blit.dstSubresource.layerCount = 1;
+
+		//blit command does not transition layout, the layout here is just an indicator so that gpu can finish the blit operation more efficiently
+		vkCmdBlitImage(commandBuffer,
+			image, VK_IMAGE_LAYOUT_TRANSFER_SRC_OPTIMAL,
+			image, VK_IMAGE_LAYOUT_TRANSFER_DST_OPTIMAL,
+			1, &blit,
+			VK_FILTER_LINEAR);
+
+		//trainsition i - 1 miplevel from TRANSFER_SRC to SHADER_READ_ONLY
+		barrier.oldLayout = VK_IMAGE_LAYOUT_TRANSFER_SRC_OPTIMAL;//DIFFERENT, all mip levels except for the last one must transfer from TRANSFER_SRC to SHADER_READ_ONLY
+		barrier.newLayout = newLayout;// VK_IMAGE_LAYOUT_SHADER_READ_ONLY_OPTIMAL;
+		barrier.srcAccessMask = VK_ACCESS_TRANSFER_READ_BIT;
+		barrier.dstAccessMask = VK_ACCESS_SHADER_READ_BIT;
+
+		vkCmdPipelineBarrier(commandBuffer,
+			VK_PIPELINE_STAGE_TRANSFER_BIT, VK_PIPELINE_STAGE_FRAGMENT_SHADER_BIT, 0,
+			0, nullptr,
+			0, nullptr,
+			1, &barrier);
+
+		if (mipWidth > 1) mipWidth /= 2;
+		if (mipHeight > 1) mipHeight /= 2;
+	}
+
+	//trainsition the last miplevel from TRANSFER_DST to SHADER_READ_ONLY
+	barrier.subresourceRange.baseMipLevel = mipLevels - 1;
+	barrier.oldLayout = VK_IMAGE_LAYOUT_TRANSFER_DST_OPTIMAL;//DIFFERENT, last mip level transfer from TRANSFER_DST to SHADER_READ_ONLY
+	barrier.newLayout = newLayout;// VK_IMAGE_LAYOUT_SHADER_READ_ONLY_OPTIMAL;
+	barrier.srcAccessMask = VK_ACCESS_TRANSFER_WRITE_BIT;
+	barrier.dstAccessMask = VK_ACCESS_SHADER_READ_BIT;
+
+	vkCmdPipelineBarrier(commandBuffer,
+		VK_PIPELINE_STAGE_TRANSFER_BIT, VK_PIPELINE_STAGE_FRAGMENT_SHADER_BIT, 0,
+		0, nullptr,
+		0, nullptr,
+		1, &barrier);
 }
 
 VkImageView Renderer::CreateImageView(VkImage image, VkFormat format, VkImageAspectFlags aspectFlags, uint32_t mipLevels)
@@ -788,6 +925,24 @@ void Renderer::CreateDescriptorSetLayoutTextureArray(VkDescriptorSetLayout& desc
 //create multiple descriptor set based on a specific descriptor layout
 //You don't need to explicitly clean up descriptor sets, because 
 //they will be automatically freed when the descriptor pool is destroyed.
+void Renderer::CreateDescriptorSets(std::vector<VkDescriptorSet>& descriptorSets, VkDescriptorPool descriptorPool, VkDescriptorSetLayout descriptorSetLayout)
+{
+	std::vector<VkDescriptorSetLayout> layouts(descriptorSets.size(), descriptorSetLayout);
+	VkDescriptorSetAllocateInfo allocInfo = {};
+	allocInfo.sType = VK_STRUCTURE_TYPE_DESCRIPTOR_SET_ALLOCATE_INFO;
+	allocInfo.descriptorPool = descriptorPool;
+	allocInfo.descriptorSetCount = descriptorSets.size();
+	allocInfo.pSetLayouts = layouts.data();
+
+	//IMPORTANT, descriptor pool is similar to descriptor heap in D3D12
+	//descriptor sets are just like separate portions of a descriptor pool
+	//descriptor sets can be bound to pipeline layout at any time
+	//but pipeline layout is bound to pipeline during pipeline creation
+	if (vkAllocateDescriptorSets(device, &allocInfo, descriptorSets.data()) != VK_SUCCESS) {
+		throw std::runtime_error("failed to allocate descriptor sets!");
+	}
+}
+
 void Renderer::CreateDescriptorSet(VkDescriptorSet& descriptorSet, VkDescriptorPool descriptorPool, VkDescriptorSetLayout descriptorSetLayout)
 {
 	std::vector<VkDescriptorSetLayout> layouts(1, descriptorSetLayout);
@@ -802,7 +957,7 @@ void Renderer::CreateDescriptorSet(VkDescriptorSet& descriptorSet, VkDescriptorP
 	//descriptor sets can be bound to pipeline layout at any time
 	//but pipeline layout is bound to pipeline during pipeline creation
 	if (vkAllocateDescriptorSets(device, &allocInfo, &descriptorSet) != VK_SUCCESS) {
-		throw std::runtime_error("failed to allocate descriptor sets!");
+		throw std::runtime_error("failed to allocate descriptor set!");
 	}
 }
 
@@ -1088,6 +1243,7 @@ void Renderer::CreatePipeline(
 }
 
 void Renderer::RecordCommand(
+	int frameIndex,
 	Pass& pass,
 	VkCommandBuffer commandBuffer,
 	VkPipeline pipeline,
@@ -1099,6 +1255,7 @@ void Renderer::RecordCommand(
 	glm::vec2 depthStencilClear)
 {
 	RecordCommandNoEnd(
+		frameIndex,
 		pass,
 		commandBuffer,
 		pipeline,
@@ -1114,6 +1271,7 @@ void Renderer::RecordCommand(
 }
 
 void Renderer::RecordCommandNoEnd(
+	int frameIndex,
 	Pass& pass,
 	VkCommandBuffer commandBuffer,
 	VkPipeline pipeline,
@@ -1157,7 +1315,7 @@ void Renderer::RecordCommandNoEnd(
 	}
 
 	//bind pass descriptor set
-	vkCmdBindDescriptorSets(commandBuffer, VK_PIPELINE_BIND_POINT_GRAPHICS, pipelineLayout, static_cast<int>(UNIFORM_SLOT::Pass), 1, pass.GetPassDescriptorSetPtr(), 0, nullptr);
+	vkCmdBindDescriptorSets(commandBuffer, VK_PIPELINE_BIND_POINT_GRAPHICS, pipelineLayout, static_cast<int>(UNIFORM_SLOT::Pass), 1, pass.GetPassDescriptorSetPtr(frameIndex), 0, nullptr);
 
 	VkRenderPassBeginInfo renderPassInfo = {};
 	renderPassInfo.sType = VK_STRUCTURE_TYPE_RENDER_PASS_BEGIN_INFO;
@@ -1178,7 +1336,7 @@ void Renderer::RecordCommandNoEnd(
 		VkBuffer vertexBuffers[] = { mesh->GetVertexBuffer() };
 		VkDeviceSize offsets[] = { 0 };
 		//bind object descriptor set
-		vkCmdBindDescriptorSets(commandBuffer, VK_PIPELINE_BIND_POINT_GRAPHICS, pipelineLayout, static_cast<int>(UNIFORM_SLOT::Object), 1, mesh->GetObjectDescriptorSetPtr(), 0, nullptr);
+		vkCmdBindDescriptorSets(commandBuffer, VK_PIPELINE_BIND_POINT_GRAPHICS, pipelineLayout, static_cast<int>(UNIFORM_SLOT::Object), 1, mesh->GetObjectDescriptorSetPtr(frameIndex), 0, nullptr);
 
 		//bind vbo
 		vkCmdBindVertexBuffers(commandBuffer, 0, 1, vertexBuffers, offsets);
@@ -1213,7 +1371,7 @@ void Renderer::CleanUpLevels()
 VKAPI_ATTR VkBool32 VKAPI_CALL Renderer::DebugCallback(VkDebugUtilsMessageSeverityFlagBitsEXT messageSeverity, VkDebugUtilsMessageTypeFlagsEXT messageType, const VkDebugUtilsMessengerCallbackDataEXT* pCallbackData, void* pUserData)
 {
 	std::cerr << "validation layer: " << pCallbackData->pMessage << std::endl;
-
+	//__debugbreak();
 	return VK_FALSE;
 }
 
@@ -1344,6 +1502,10 @@ void Renderer::PickPhysicalDevice()
 	if (physicalDevice == VK_NULL_HANDLE) {
 		throw std::runtime_error("failed to find a suitable GPU!");
 	}
+
+	VkPhysicalDeviceProperties physicalDeviceProperties;
+	vkGetPhysicalDeviceProperties(physicalDevice, &physicalDeviceProperties);
+	physicalDeviceLimits = physicalDeviceProperties.limits;
 }
 
 void Renderer::CreateLogicalDevice()
@@ -1488,16 +1650,17 @@ void Renderer::CreateSwapChain()
 	VkPresentModeKHR presentMode = ChooseSwapPresentMode(swapChainSupport.presentModes);
 	VkExtent2D extent = ChooseSwapExtent(swapChainSupport.capabilities);
 
-	uint32_t imageCount = swapChainSupport.capabilities.minImageCount + 1;
-	if (swapChainSupport.capabilities.maxImageCount > 0 && imageCount > swapChainSupport.capabilities.maxImageCount) {
-		imageCount = swapChainSupport.capabilities.maxImageCount;
+	if (swapChainSupport.capabilities.maxImageCount > 0 && frameCount > swapChainSupport.capabilities.maxImageCount)
+	{
+		frameCount = swapChainSupport.capabilities.maxImageCount;
+		throw std::runtime_error("imageCount exceeds capability! using maximum possible. frames in flight is " + frameCount);
 	}
 
 	VkSwapchainCreateInfoKHR createInfo = {};
 	createInfo.sType = VK_STRUCTURE_TYPE_SWAPCHAIN_CREATE_INFO_KHR;
 	createInfo.surface = surface;
 
-	createInfo.minImageCount = imageCount;
+	createInfo.minImageCount = frameCount;
 	createInfo.imageFormat = surfaceFormat.format;
 	createInfo.imageColorSpace = surfaceFormat.colorSpace;
 	createInfo.imageExtent = extent;
@@ -1526,7 +1689,9 @@ void Renderer::CreateSwapChain()
 		throw std::runtime_error("failed to create swap chain!");
 	}
 
+	uint32_t imageCount = 0;
 	vkGetSwapchainImagesKHR(device, swapChain, &imageCount, nullptr);
+	assert(imageCount == frameCount);//make sure what we get is what we set
 	swapChainImages.resize(imageCount);
 	vkGetSwapchainImagesKHR(device, swapChain, &imageCount, swapChainImages.data());
 
@@ -1602,9 +1767,9 @@ void Renderer::CreateImageViews()
 
 void Renderer::CreateSyncObjects()
 {
-	imageAvailableSemaphores.resize(framesInFlight);
-	renderFinishedSemaphores.resize(framesInFlight);
-	inFlightFences.resize(framesInFlight);
+	imageAvailableSemaphores.resize(frameCount);
+	renderFinishedSemaphores.resize(frameCount);
+	inFlightFences.resize(frameCount);
 
 	VkSemaphoreCreateInfo semaphoreInfo = {};
 	semaphoreInfo.sType = VK_STRUCTURE_TYPE_SEMAPHORE_CREATE_INFO;
@@ -1613,7 +1778,7 @@ void Renderer::CreateSyncObjects()
 	fenceInfo.sType = VK_STRUCTURE_TYPE_FENCE_CREATE_INFO;
 	fenceInfo.flags = VK_FENCE_CREATE_SIGNALED_BIT;
 
-	for (size_t i = 0; i < framesInFlight; i++) {
+	for (size_t i = 0; i < frameCount; i++) {
 		if (vkCreateSemaphore(device, &semaphoreInfo, nullptr, &imageAvailableSemaphores[i]) != VK_SUCCESS ||
 			vkCreateSemaphore(device, &semaphoreInfo, nullptr, &renderFinishedSemaphores[i]) != VK_SUCCESS ||
 			vkCreateFence(device, &fenceInfo, nullptr, &inFlightFences[i]) != VK_SUCCESS) {
@@ -1690,7 +1855,7 @@ void Renderer::CleanUp()
 
 	vkDestroyCommandPool(device, defaultCommandPool, nullptr);
 
-	for (size_t i = 0; i < framesInFlight; i++) {
+	for (size_t i = 0; i < frameCount; i++) {
 		vkDestroySemaphore(device, renderFinishedSemaphores[i], nullptr);
 		vkDestroySemaphore(device, imageAvailableSemaphores[i], nullptr);
 		vkDestroyFence(device, inFlightFences[i], nullptr);
@@ -1950,8 +2115,8 @@ uint32_t Renderer::WaitForFence()
 {
 	vkWaitForFences(device, 1, &inFlightFences[currentFrame], VK_TRUE, std::numeric_limits<uint64_t>::max());
 
-	uint32_t imageIndex;
-	VkResult result = vkAcquireNextImageKHR(device, swapChain, std::numeric_limits<uint64_t>::max(), imageAvailableSemaphores[currentFrame], VK_NULL_HANDLE, &imageIndex);
+	uint32_t nextImageIndex;
+	VkResult result = vkAcquireNextImageKHR(device, swapChain, std::numeric_limits<uint64_t>::max(), imageAvailableSemaphores[currentFrame], VK_NULL_HANDLE, &nextImageIndex);
 
 	if (result == VK_ERROR_OUT_OF_DATE_KHR) {
 		//RecreateSwapChain();
@@ -1961,7 +2126,7 @@ uint32_t Renderer::WaitForFence()
 		throw std::runtime_error("failed to acquire swap chain image!");
 	}
 
-	return imageIndex;
+	return nextImageIndex;
 }
 
 void Renderer::BeginCommandBuffer(VkCommandBuffer commandBuffer)
@@ -1979,7 +2144,7 @@ void Renderer::BeginCommandBuffer(VkCommandBuffer commandBuffer)
 	}
 }
 
-void Renderer::EndCommandBuffer(VkCommandBuffer commandBuffer, uint32_t imageIndex)
+void Renderer::EndCommandBuffer(VkCommandBuffer commandBuffer, uint32_t nextFrame)
 {
 	//command buffer end
 	if (vkEndCommandBuffer(commandBuffer) != VK_SUCCESS)
@@ -1987,8 +2152,9 @@ void Renderer::EndCommandBuffer(VkCommandBuffer commandBuffer, uint32_t imageInd
 		throw std::runtime_error("failed to record command buffer!");
 	}
 
-	VkSemaphore waitSemaphores[] = { imageAvailableSemaphores[currentFrame] };
 	VkPipelineStageFlags waitStages[] = { VK_PIPELINE_STAGE_COLOR_ATTACHMENT_OUTPUT_BIT };
+	VkSemaphore waitSemaphores[] = { imageAvailableSemaphores[currentFrame] };
+	VkSemaphore signalSemaphores[] = { renderFinishedSemaphores[currentFrame] };
 	VkSubmitInfo submitInfo = {};
 	submitInfo.sType = VK_STRUCTURE_TYPE_SUBMIT_INFO;
 	submitInfo.waitSemaphoreCount = 1;
@@ -1996,8 +2162,6 @@ void Renderer::EndCommandBuffer(VkCommandBuffer commandBuffer, uint32_t imageInd
 	submitInfo.pWaitDstStageMask = waitStages;
 	submitInfo.commandBufferCount = 1;
 	submitInfo.pCommandBuffers = &commandBuffer;
-
-	VkSemaphore signalSemaphores[] = { renderFinishedSemaphores[currentFrame] };
 	submitInfo.signalSemaphoreCount = 1;
 	submitInfo.pSignalSemaphores = signalSemaphores;
 
@@ -2014,7 +2178,7 @@ void Renderer::EndCommandBuffer(VkCommandBuffer commandBuffer, uint32_t imageInd
 	presentInfo.pWaitSemaphores = signalSemaphores;
 	presentInfo.swapchainCount = 1;
 	presentInfo.pSwapchains = swapChains;
-	presentInfo.pImageIndices = &imageIndex;
+	presentInfo.pImageIndices = &nextFrame;
 
 	VkResult result = vkQueuePresentKHR(presentQueue, &presentInfo);
 
@@ -2022,14 +2186,14 @@ void Renderer::EndCommandBuffer(VkCommandBuffer commandBuffer, uint32_t imageInd
 		throw std::runtime_error("failed to present swap chain image!");
 	}
 
-	currentFrame = (currentFrame + 1) % framesInFlight;
+	currentFrame = (currentFrame + 1) % (frameCount);
 }
 
 // ~ general pipeline resources ~
 
 //bind buffer to one specific binding point of one or more descriptor sets
 //if the vector only contains one descriptor set, then only the binding point of that descriptor set is bound
-void Renderer::BindUniformBufferToDescriptorSets(VkBuffer buffer, VkDeviceSize size, const std::vector<VkDescriptorSet>& descriptorSets, uint32_t binding)
+void Renderer::BindUniformBufferToDescriptorSets(VkBuffer buffer, VkDeviceSize offset, VkDeviceSize size, const std::vector<VkDescriptorSet>& descriptorSets, uint32_t binding)
 {
 	//loop over descriptor sets
 	for (size_t i = 0; i < descriptorSets.size(); i++) {
@@ -2038,7 +2202,7 @@ void Renderer::BindUniformBufferToDescriptorSets(VkBuffer buffer, VkDeviceSize s
 		//uniform buffer
 		VkDescriptorBufferInfo bufferInfo = {};
 		bufferInfo.buffer = buffer;
-		bufferInfo.offset = 0;
+		bufferInfo.offset = offset;
 		bufferInfo.range = size;
 
 		descriptorWrites[0].sType = VK_STRUCTURE_TYPE_WRITE_DESCRIPTOR_SET;

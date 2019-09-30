@@ -23,11 +23,14 @@ public:
 	void AddLevel(Level* pLevel);
 	void InitVulkan();
 	void InitAssets();
+	int GetNextFrame(int frame);
 
 	// ~ get general vulkan resources ~
 
 	VkDevice GetDevice() const;
 	VkPhysicalDevice GetPhysicalDevice() const;
+	VkDeviceSize GetAlignedUboOffset(int size, int number) const;
+	VkDeviceSize GetAlignedUboSize(int size) const;
 	VkInstance GetInstance() const;
 	VkQueue GetGraphicsQueue() const;
 	uint32_t GetGraphicsQueueFamilyIndex() const;
@@ -90,8 +93,18 @@ public:
 		VkCommandPool commandPool, 
 		VkImage image, 
 		VkFormat imageFormat, 
+		VkImageLayout newLayout,
 		int32_t texWidth, 
 		int32_t texHeight, 
+		uint32_t mipLevels);
+
+	void GenerateMipmaps(
+		VkCommandBuffer commandBuffer,
+		VkImage image,
+		VkFormat imageFormat,
+		VkImageLayout newLayout,
+		int32_t texWidth,
+		int32_t texHeight,
 		uint32_t mipLevels);
 
 	VkImageView CreateImageView(
@@ -102,7 +115,7 @@ public:
 
 	// ~ bind descriptors ~
 
-	void BindUniformBufferToDescriptorSets(VkBuffer buffer, VkDeviceSize size, const std::vector<VkDescriptorSet>& descriptorSets, uint32_t binding);
+	void BindUniformBufferToDescriptorSets(VkBuffer buffer, VkDeviceSize offset, VkDeviceSize size, const std::vector<VkDescriptorSet>& descriptorSets, uint32_t binding);
 	void BindTextureToDescriptorSets(VkImageView textureImageView, VkSampler textureSampler, const std::vector<VkDescriptorSet>& descriptorSets, uint32_t binding, uint32_t elementOffset = 0);
 	void BindTextureArrayToDescriptorSets(const std::vector<Texture*>& pTextureVec, const std::vector<VkDescriptorSet>& descriptorSets, uint32_t binding);
 
@@ -135,6 +148,11 @@ public:
 		uint32_t uboCount,
 		uint32_t texBindingOffset,
 		const std::vector<uint32_t>& texCounts);
+
+	void CreateDescriptorSets(
+		std::vector<VkDescriptorSet>& descriptorSets,
+		VkDescriptorPool descriptorPool,
+		VkDescriptorSetLayout descriptorSetLayout);
 
 	void CreateDescriptorSet(
 		VkDescriptorSet& descriptorSet, 
@@ -191,6 +209,7 @@ public:
 		const Pass& pass);
 
 	void RecordCommand(
+		int frameIndex,
 		Pass& pass,
 		VkCommandBuffer commandBuffer,
 		VkPipeline pipeline,
@@ -202,6 +221,7 @@ public:
 		glm::vec2 depthStencilClear = glm::vec2(1.0f, 0.0f));
 
 	void RecordCommandNoEnd(
+		int frameIndex,
 		Pass& pass,
 		VkCommandBuffer commandBuffer,
 		VkPipeline pipeline,
@@ -218,10 +238,12 @@ public:
 
 	GLFWwindow* window;
 
-	// ~ member variables ~
+	// ~ public member variables ~
 
 	int width;
 	int height;
+	int frameCount;
+	int currentFrame = 0;
 
 	// ~ default pool and command buffers ~
 
@@ -302,7 +324,6 @@ private:
 	// ~ member variables ~
 
 	std::vector<Level*> pLevelVec;
-	int framesInFlight;
 
 	// ~ app ~
 
@@ -313,6 +334,7 @@ private:
 	// ~ gpu device ~
 
 	VkPhysicalDevice physicalDevice = VK_NULL_HANDLE;
+	VkPhysicalDeviceLimits physicalDeviceLimits;
 	VkDevice device;
 
 	// ~ gpu queue ~ 
@@ -350,7 +372,6 @@ private:
 	std::vector<VkSemaphore> imageAvailableSemaphores;
 	std::vector<VkSemaphore> renderFinishedSemaphores;
 	std::vector<VkFence> inFlightFences;
-	size_t currentFrame = 0;
 
 	// ~ clean up ~
 
