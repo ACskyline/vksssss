@@ -73,14 +73,15 @@ RenderTexture mRenderTextureRedLightTSM("red light tsm rt", WIDTH_SHADOW_MAP, HE
 RenderTexture mRenderTextureGreenLightTSM("green light tsm rt", WIDTH_SHADOW_MAP, HEIGHT_SHADOW_MAP, VK_FORMAT_R16G16B16A16_UNORM, Texture::Filter::Trilinear, Texture::Wrap::Clamp, true, false, false, RenderTexture::ReadFrom::Color);
 RenderTexture mRenderTextureBlueLightTSM("blue light tsm rt", WIDTH_SHADOW_MAP, HEIGHT_SHADOW_MAP, VK_FORMAT_R16G16B16A16_UNORM, Texture::Filter::Trilinear, Texture::Wrap::Clamp, true, false, false, RenderTexture::ReadFrom::Color);
 std::vector<std::vector<RenderTexture>> mRenderTextureBlurVec(static_cast<int>(BLUR_TYPE::Count), std::vector<RenderTexture>(MAX_BLUR_COUNT, RenderTexture("blur", WIDTH_RT, HEIGHT_RT, VK_FORMAT_R8G8B8A8_UNORM, Texture::Filter::Bilinear, Texture::Wrap::Clamp, true, false, false, RenderTexture::ReadFrom::Color)));//[BLUR_TYPE][BLUR_COUNT]
-Light mLightRed("light red", glm::vec3(0.8f, 0.4f, 0.4f), glm::vec3(5, 0, 0), &mCameraRedLight, &mRenderTextureRedLight, &mRenderTextureRedLightTSM);
-Light mLightGreen("light green", glm::vec3(0.4f, 0.8f, 0.4f), glm::vec3(0, 5, 0), &mCameraGreenLight, &mRenderTextureGreenLight, &mRenderTextureGreenLightTSM);
-Light mLightBlue("light blue", glm::vec3(0.4f, 0.4f, 0.8f), glm::vec3(0, 0, 5), &mCameraBlueLight, &mRenderTextureBlueLight, &mRenderTextureBlueLightTSM);
+Light mLightRed("light red", glm::vec3(0.8f, 0.8f, 0.8f), glm::vec3(5, 0, 0), &mCameraRedLight, &mRenderTextureRedLight, &mRenderTextureRedLightTSM);
+Light mLightGreen("light green", glm::vec3(0.8f, 0.8f, 0.8f), glm::vec3(0, 5, 0), &mCameraGreenLight, &mRenderTextureGreenLight, &mRenderTextureGreenLightTSM);
+Light mLightBlue("light blue", glm::vec3(0.8f, 0.8f, 0.8f), glm::vec3(0, 0, 5), &mCameraBlueLight, &mRenderTextureBlueLight, &mRenderTextureBlueLightTSM);
 
 static int newFrame = 0;
 static int updateSettings = 0;
 static int updateCamera = 0;
 static int updateHead = 0;
+static bool rotateHead = true;
 
 //imgui stuff
 VkDescriptorPool ImGuiDescriptorPool;
@@ -725,6 +726,11 @@ void DrawImGui(VkCommandBuffer commandBuffer)
 		updateSettings = updateSettingsCount;
 	}
 
+	if (ImGui::Button("rotateHead"))
+	{
+		rotateHead = !rotateHead;
+	}
+
 	ImGui::Text("Application average %.3f ms/frame (%.1f FPS)", 1000.0f / ImGui::GetIO().Framerate, ImGui::GetIO().Framerate);
 	ImGui::End();
 
@@ -1037,9 +1043,12 @@ void DrawEnd()
 
 void UpdateGameLogic()
 {
-	const int updateHeadCount = mRenderer.frameCount;
-	updateHead = updateHeadCount;
-	mMeshHead.rotation.y += 0.05;
+	if (rotateHead)
+	{
+		const int updateHeadCount = mRenderer.frameCount;
+		updateHead = updateHeadCount;
+		mMeshHead.rotation.y += 0.05;
+	}
 }
 
 void UpdateUniformBuffers()
