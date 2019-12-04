@@ -3,6 +3,18 @@ A screen space sub-surface scattering demo implemented with vulkan api
 
 ## Overview
 
+![](a.JPG)
+
+![](b.JPG)
+
+![](c.JPG)
+
+![](d.JPG)
+
+![](e.JPG)
+
+![](f.JPG)
+
 ![](1.JPG)
 
 ## Scattering
